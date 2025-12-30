@@ -131,7 +131,7 @@ public class BookKeeperCreateLedgerTest extends BookKeeperClusterTestCase {
 
                 Assert.assertNotNull("LedgerHandle should not be null", this.ledgerHandle);
 
-                // Verifica funzionale come da reference
+                // Verifica funzionale
                 this.ledgerHandle.addEntry("Expect that works".getBytes());
                 this.ledgerHandle.addEntry("Expect that works two times".getBytes());
 
