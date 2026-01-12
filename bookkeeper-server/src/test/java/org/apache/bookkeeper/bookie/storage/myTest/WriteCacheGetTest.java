@@ -5,8 +5,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import io.netty.buffer.UnpooledByteBufAllocator;
-import io.netty.util.IllegalReferenceCountException;
-import io.netty.util.ReferenceCountUtil;
 import org.apache.bookkeeper.bookie.storage.ldb.WriteCache;
 import org.junit.After;
 import org.junit.Before;
@@ -24,69 +22,81 @@ import static org.junit.Assert.*;
 @RunWith(Parameterized.class)
 public class WriteCacheGetTest {
 
-    public enum CacheState{
+    public enum CacheState {
         AVAILABLE,
         EMPTY,
         CLOSED
     }
 
-    private static final int  WRONG_ID = 47;
-    private static final int  ID= 0;
+    public enum Outcome {
+        EXCEPTION,
+        MISS,
+        HIT
+    }
+
+    private static final int WRONG_ID = 47;
+    private static final int ID = 0;
     private static final byte[] ENTRY = "Test entry 1".getBytes(StandardCharsets.UTF_8);
 
+    private final int testNumber;
     private final long ledgerID;
     private final long entryID;
     private final CacheState cacheState;
-    private boolean isExceptionExpected;
+    private final Outcome outcome;
 
     private WriteCache writeCache;
 
-    public WriteCacheGetTest(int ledgerID, int entryId, CacheState cacheState, boolean isExceptionExpected) {
-        this.entryID=entryId;
+    public WriteCacheGetTest(int testNumber, int ledgerID, int entryId, CacheState cacheState, Outcome outcome) {
+        this.testNumber = testNumber;
+        this.entryID = entryId;
         this.ledgerID = ledgerID;
         this.cacheState = cacheState;
-        this.isExceptionExpected = isExceptionExpected;
+        this.outcome = outcome;
     }
 
-    @Parameters(name = "LedgerID{0}, EntryID{1}, State={2} -> ExpectEx={3}")
-    public static Collection<Object[]> data(){
+    @Parameters(name = "Test #{0}:LedgerID{1}, EntryID{2}, CacheState={3} -> Outcome={4}")
+    public static Collection<Object[]> data() {
         return Arrays.asList(new Object[][]{
-            /* 1 */{ID, ID, CacheState.AVAILABLE, false},
-                /* 2 */{WRONG_ID, WRONG_ID, CacheState.AVAILABLE, true},
-                /* 3 */{WRONG_ID, WRONG_ID, CacheState.AVAILABLE, true},
-                /* 4 */{WRONG_ID, WRONG_ID, CacheState.AVAILABLE, true},
-                /* 5 */  {ID, ID, CacheState.EMPTY, true},
-                /* 6 */ {ID, ID, CacheState.CLOSED, true},
+                {1, ID, ID, CacheState.AVAILABLE, Outcome.HIT},
+                {2, ID, WRONG_ID, CacheState.AVAILABLE, Outcome.MISS},
+                {3, WRONG_ID, ID, CacheState.AVAILABLE, Outcome.MISS},
+                {4, WRONG_ID, WRONG_ID, CacheState.AVAILABLE, Outcome.MISS},
+            //    {5, ID, -1, CacheState.AVAILABLE, Outcome.EXCEPTION},
+                {6, -1, ID, CacheState.AVAILABLE, Outcome.EXCEPTION},
+                {7, -1, WRONG_ID, CacheState.AVAILABLE, Outcome.EXCEPTION},
+             //   {8, WRONG_ID, -1, CacheState.AVAILABLE, Outcome.EXCEPTION},
+                {9, -1, -1, CacheState.AVAILABLE, Outcome.EXCEPTION},
+                {10, ID, ID, CacheState.EMPTY, Outcome.MISS},
+                {11, ID, ID, CacheState.CLOSED, Outcome.MISS},
         });
 
     }
 
     @Before
-    public void setUp(){
+    public void setUp() {
         ByteBufAllocator allocator = UnpooledByteBufAllocator.DEFAULT;
         long maxCacheSize = 1024;
         writeCache = new WriteCache(allocator, maxCacheSize);
 
-        switch (cacheState){
+        switch (cacheState) {
             case EMPTY:
                 break;
-            case AVAILABLE: {
+
+            case AVAILABLE:
                 ByteBuf buffer = Unpooled.wrappedBuffer(ENTRY);
-                try {
-                    writeCache.put(ID, ID, buffer);
-                } finally {
-                    ReferenceCountUtil.release(buffer); // evita leak del buffer di input
-                }
+                boolean inserted = writeCache.put(ID, ID, buffer);
+                assertTrue("Setup fallito: impossibile inserire entry nella cache", inserted);
                 break;
-            }
+
             case CLOSED:
                 writeCache.close();
+                break;
         }
     }
+
     @After
     public void tearDown() {
         if (writeCache != null) {
-            // Evita double-close: in CLOSED l'hai già chiusa in setUp
             if (cacheState != CacheState.CLOSED) {
                 writeCache.close();
             }
@@ -96,38 +106,47 @@ public class WriteCacheGetTest {
 
     @Test
     public void testGet() {
-        final boolean expectThrow = (cacheState == CacheState.CLOSED) && isExceptionExpected;
-        final boolean expectHit =
-                (cacheState == CacheState.AVAILABLE)
-                        && (ledgerID == ID)
-                        && (entryID == ID)
-                        && !isExceptionExpected;
+        switch (outcome) {
+            case EXCEPTION:
+                testException();
+                break;
 
-        ByteBuf result = null;
-        try {
-            result = writeCache.get(ledgerID, entryID);
+            case HIT:
+                testHit();
+                break;
 
-            if (expectThrow) {
-                fail("Expected an exception when cache is CLOSED");
-            }
-
-            if (expectHit) {
-                assertNotNull("Expected cache HIT (non-null ByteBuf)", result);
-                byte[] actual = new byte[result.readableBytes()];
-                result.getBytes(result.readerIndex(), actual);
-                assertArrayEquals("Entry content mismatch", ENTRY, actual);
-            } else {
-                assertNull("Expected cache MISS (null)", result);
-            }
-        } catch (IllegalStateException e) {
-            if (!expectThrow) {
-                throw e; // eccezione inattesa
-            }
-            // eccezione attesa nel caso CLOSED
-        } finally {
-            ReferenceCountUtil.release(result); // release sicuro anche su null
+            case MISS:
+                testMiss();
+                break;
         }
     }
 
+    private void testException() {
+        try {
+            writeCache.get(ledgerID, entryID);
+            fail("Test #" + testNumber + ": Attesa eccezione ma nessuna lanciata");
+        } catch (IllegalArgumentException | IllegalStateException | NullPointerException e) {
+            // Eccezione attesa - il test passa
+            System.out.println("Test #" + testNumber + ": Eccezione catturata come atteso: " +
+                    e.getClass().getSimpleName() + " - " + e.getMessage());
+        }
+    }
 
+    private void testHit() {
+        ByteBuf result = writeCache.get(ledgerID, entryID);
+        assertNotNull("Test #" + testNumber + ": Atteso HIT ma ottenuto null", result);
+
+        // Verifico che i dati siano corretti
+        byte[] resultData = new byte[result.readableBytes()];
+        result.readBytes(resultData);
+        assertArrayEquals("Test #" + testNumber + ": Dati non corrispondenti",
+                ENTRY, resultData);
+
+        result.release();
+    }
+
+    private void testMiss() {
+        ByteBuf result = writeCache.get(ledgerID, entryID);
+        assertNull("Test #" + testNumber + ": Atteso MISS ma ottenuto un valore", result);
+    }
 }

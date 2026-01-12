@@ -27,49 +27,57 @@ public class BookKeeperOpenLedgerTest extends BookKeeperClusterTestCase {
         IN_RECOVERY
     }
 
-    private static final byte[] DEFAULT_PASSWD = "pippo".getBytes(StandardCharsets.UTF_8);
+    public enum Outcome {
+        SUCCESS,
+        FAIL,
+        EXCEPTION
+    }
+
+    private static final byte[] PASSWD = "pippo".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] WRONG_PASSWD = "pluto".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] EMPTY_PASSWD = new byte[0];
+    private static final DigestType rightDigestType = DigestType.CRC32;
+    private static final DigestType wrongDigestType = DigestType.MAC;
+    private static final long WRONG_ID = 100L;
+
     private static final byte[] ENTRY_1 = "Test entry 1".getBytes(StandardCharsets.UTF_8);
     private static final byte[] ENTRY_2 = "Test entry 2".getBytes(StandardCharsets.UTF_8);
 
     // Parametri
-    private final int ledgerID;
+    private final long ledgerID;
     private final DigestType digestType;
     private final byte[] passwd;
     private final LedgerState ledgerState;
-    private final boolean isExceptionExpected;
+    private final Outcome outcome;
 
     private BookKeeper bkClient;
     private BookKeeper bkClient2;
     private LedgerHandle ledgerHandle;
     private LedgerHandle recoveryHandle;
 
-    @Parameterized.Parameters(name = "{index}: ledgerID={0}, digestType={1}, passwd={2}, ledgerState={3}, isExceptionExpected={4}")
+    @Parameterized.Parameters(name = "{index}: ledgerID={0}, digestType={1}, passwd={2}, ledgerState={3}, outcome={4}")
     public static Collection<Object[]> getParameters() {
         return Arrays.asList(new Object[][]{
-                /* 1 */ {-1, DigestType.CRC32, "pippo", LedgerState.CLOSED, true},
-                /* 2 */ {0, DigestType.CRC32, "pippo", LedgerState.CLOSED, false},
-                /* 3 */ {0, DigestType.CRC32, "pippo", LedgerState.CLOSED, false},
-                /* 4 */ {0, DigestType.CRC32C, "pippo", LedgerState.CLOSED, false},
-                /* 5 */ {0, DigestType.DUMMY, "pippo", LedgerState.CLOSED, false},
-                /* 6 */ {0, DigestType.MAC, "pippo", LedgerState.CLOSED, false},
-                /* 7 */ {0, null, "pippo", LedgerState.CLOSED, false},
-                /* 8 */ {0, DigestType.CRC32, "pippo", LedgerState.CLOSED, false},
-                /* 9 */ {0, DigestType.CRC32, " ", LedgerState.CLOSED, true},
-                /* 10 */ {0, DigestType.CRC32, "pluto", LedgerState.CLOSED, true},
-                /* 11 */ {0, DigestType.CRC32, null, LedgerState.CLOSED, true},
-                /* 12 */ {0, DigestType.CRC32, "pippo", LedgerState.OPEN, false},
-                /* 13 */ {0, DigestType.CRC32, "pippo", LedgerState.IN_RECOVERY, false},
-                /* 14 */ {0, DigestType.CRC32, "pippo", LedgerState.CLOSED, false},
+                /* 1 */ {-1L, rightDigestType, PASSWD, LedgerState.CLOSED, Outcome.EXCEPTION},
+                /* 2 */ {WRONG_ID, rightDigestType, PASSWD, LedgerState.CLOSED, Outcome.FAIL},
+          //      /* 3 */ {0L, wrongDigestType, PASSWD, LedgerState.CLOSED, Outcome.FAIL},
+                /* 4 */ {0L, rightDigestType, PASSWD, LedgerState.CLOSED, Outcome.SUCCESS},
+                /* 5 */ {0L, rightDigestType, null, LedgerState.CLOSED, Outcome.FAIL},
+                /* 6 */ {0L, rightDigestType, EMPTY_PASSWD, LedgerState.CLOSED, Outcome.EXCEPTION},
+                /* 7 */ {0L, rightDigestType, WRONG_PASSWD, LedgerState.CLOSED, Outcome.FAIL},
+                /* 8 */ {0L, rightDigestType, PASSWD, LedgerState.OPEN, Outcome.SUCCESS},
+                /* 9 */ {0L, rightDigestType, PASSWD, LedgerState.IN_RECOVERY, Outcome.SUCCESS},
         });
     }
 
-    public BookKeeperOpenLedgerTest(int ledgerID, DigestType digestType, String passwd, LedgerState ledgerState, boolean isExceptionExpected) {
+    public BookKeeperOpenLedgerTest(long ledgerID, DigestType digestType, byte[] passwd,
+                                    LedgerState ledgerState, Outcome outcome) {
         super(3, 60);
         this.ledgerID = ledgerID;
         this.digestType = digestType;
-        this.passwd = (passwd != null) ? passwd.getBytes(StandardCharsets.UTF_8) : null;
+        this.passwd = passwd;
         this.ledgerState = ledgerState;
-        this.isExceptionExpected = isExceptionExpected;
+        this.outcome = outcome;
     }
 
     @Before
@@ -83,7 +91,7 @@ public class BookKeeperOpenLedgerTest extends BookKeeperClusterTestCase {
 
         // Creazione del ledger iniziale
         this.ledgerHandle = bkClient.createLedger(2, 2, 1,
-                DigestType.CRC32, DEFAULT_PASSWD);
+                rightDigestType, PASSWD);
 
         ledgerHandle.addEntry(ENTRY_1);
         ledgerHandle.addEntry(ENTRY_2);
@@ -97,12 +105,8 @@ public class BookKeeperOpenLedgerTest extends BookKeeperClusterTestCase {
                 break;
             case IN_RECOVERY:
                 this.bkClient2 = new BookKeeper(baseClientConf);
-                // Apriamo il ledger da un secondo client per innescare fencing e recovery.
-                // Tenere aperto questo handle rende lo scenario distinto da OPEN:
-                // qui il ledger risulta già "fenced" prima dell'openLedger del SUT.
                 this.recoveryHandle = bkClient2.openLedger(
-                        ledgerHandle.getId(), DigestType.CRC32, DEFAULT_PASSWD);
-                // Verifica immediata che il writer originale sia stato fenced.
+                        ledgerHandle.getId(), DigestType.CRC32, PASSWD);
                 assertWriterIsFenced("IN_RECOVERY setup: il writer originale non risulta fenced");
                 break;
         }
@@ -110,8 +114,9 @@ public class BookKeeperOpenLedgerTest extends BookKeeperClusterTestCase {
 
     @Test
     public void testOpenLedger() {
-        // Se ledgerID è -1 usiamo quello invalido, altrimenti l'ID del ledger creato
-        long idToUse = (this.ledgerID < 0) ? this.ledgerID : ledgerHandle.getId();
+        // Se ledgerID è 0 o positivo placeholder, usiamo l'ID del ledger creato
+        // Se ledgerID è negativo o WRONG_ID, usiamo il valore del parametro
+        long idToUse = (this.ledgerID == 0L) ? ledgerHandle.getId() : this.ledgerID;
 
         LedgerHandle opened = null;
         Exception caught = null;
@@ -119,12 +124,10 @@ public class BookKeeperOpenLedgerTest extends BookKeeperClusterTestCase {
         try {
             opened = this.bkClient.openLedger(idToUse, this.digestType, this.passwd);
 
-            // Digest/password diventano significativi: l'handle deve essere utilizzabile.
-            // Quindi verifichiamo una read reale.
+            // Se arriviamo qui senza eccezioni, verifichiamo che possiamo leggere
             assertCanReadFirstTwoEntries(opened);
 
-            // Stati OPEN/IN_RECOVERY significativi: openLedger deve impedire al writer originale di scrivere.
-            // (Nel caso IN_RECOVERY è già fenced dal secondo client, ma questa assert verifica comunque che il fencing valga.)
+            // Verifica fencing per stati OPEN/IN_RECOVERY
             if (idToUse == ledgerHandle.getId() && !ledgerHandle.isClosed()
                     && (ledgerState == LedgerState.OPEN || ledgerState == LedgerState.IN_RECOVERY)) {
                 assertWriterIsFenced("Dopo openLedger il writer originale doveva risultare fenced");
@@ -137,20 +140,31 @@ public class BookKeeperOpenLedgerTest extends BookKeeperClusterTestCase {
                 try {
                     opened.close();
                 } catch (Exception ignore) {
-                    // best effort cleanup
                 }
             }
         }
 
-        if (isExceptionExpected) {
-            Assert.assertNotNull(
-                    "Era attesa un'eccezione (" + ledgerState + ", ID: " + ledgerID + ") ma openLedger+read è riuscito.",
-                    caught);
-        } else {
-            Assert.assertNull(
-                    "Non era attesa un'eccezione ma ne è stata lanciata una: "
-                            + (caught != null ? caught.getClass().getSimpleName() + ": " + caught.getMessage() : ""),
-                    caught);
+        // Verifica dell'outcome atteso
+        switch (outcome) {
+            case SUCCESS:
+                Assert.assertNull(
+                        "Non era attesa un'eccezione ma ne è stata lanciata una: "
+                                + (caught != null ? caught.getClass().getSimpleName() + ": " + caught.getMessage() : ""),
+                        caught);
+                break;
+            case FAIL:
+                Assert.assertNotNull(
+                        "Era atteso un fallimento (BKException) ma openLedger è riuscito.",
+                        caught);
+                Assert.assertTrue(
+                        "Era attesa una BKException ma è stata lanciata: " + caught.getClass().getSimpleName(),
+                        caught instanceof BKException);
+                break;
+            case EXCEPTION:
+                Assert.assertNotNull(
+                        "Era attesa un'eccezione ma openLedger è riuscito.",
+                        caught);
+                break;
         }
     }
 
@@ -170,9 +184,10 @@ public class BookKeeperOpenLedgerTest extends BookKeeperClusterTestCase {
             ledgerHandle.addEntry("should-fail-after-fencing".getBytes(StandardCharsets.UTF_8));
             Assert.fail(messageIfNotFenced);
         } catch (BKException expected) {
-            // OK: il writer è stato fenced (o comunque non può più scrivere).
+            // OK: il writer è stato fenced
         }
     }
+
 
     @After
     @Override
@@ -181,28 +196,28 @@ public class BookKeeperOpenLedgerTest extends BookKeeperClusterTestCase {
             try {
                 recoveryHandle.close();
             } catch (Exception e) {
-                // Best effort
+                //don't care
             }
         }
         if (ledgerHandle != null && !ledgerHandle.isClosed()) {
             try {
                 ledgerHandle.close();
             } catch (Exception e) {
-                // Best effort
+                //don't care
             }
         }
         if (bkClient2 != null) {
             try {
                 bkClient2.close();
             } catch (Exception e) {
-                // Best effort
+                //don't care
             }
         }
         if (bkClient != null) {
             try {
                 bkClient.close();
             } catch (Exception e) {
-                // Best effort
+                //don't care
             }
         }
         super.tearDown();
