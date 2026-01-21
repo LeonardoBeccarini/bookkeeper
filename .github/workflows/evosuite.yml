@@ -42,26 +42,19 @@ jobs:
 
       - name: Downgrade dependencies for EvoSuite compatibility
         run: |
-          echo "=== Downgrading dependencies to Java 11 compatible versions ==="
+          echo "=== Downgrading only problematic dependencies (Java 17+ compiled) ==="
           
-          # Netty: 4.1.121.Final -> 4.1.86.Final (ultimo compilato con Java 11)
+          # Netty: 4.1.121.Final -> 4.1.86.Final (compilato con Java 11)
           sed -i 's/<netty.version>4.1.121.Final<\/netty.version>/<netty.version>4.1.86.Final<\/netty.version>/g' pom.xml
           
-          # Netty io_uring (se presente)
+          # Netty io_uring
           sed -i 's/<netty-iouring.version>0.0.26.Final<\/netty-iouring.version>/<netty-iouring.version>0.0.16.Final<\/netty-iouring.version>/g' pom.xml
           
-          # Checker-qual (viene con Guava) - Guava 32 usa checker-qual 3.33 (Java 17+)
-          # Downgrade Guava: 32.0.1-jre -> 31.1-jre
+          # Guava: 32.0.1-jre -> 31.1-jre (usa checker-qual 3.12.0, compilato con Java 8)
           sed -i 's/<guava.version>32.0.1-jre<\/guava.version>/<guava.version>31.1-jre<\/guava.version>/g' pom.xml
           
-          # gRPC: versioni recenti potrebbero avere problemi
-          sed -i 's/<grpc.version>1.72.0<\/grpc.version>/<grpc.version>1.53.0<\/grpc.version>/g' pom.xml
-          
-          # Protobuf
-          sed -i 's/<protobuf.version>3.25.5<\/protobuf.version>/<protobuf.version>3.21.12<\/protobuf.version>/g' pom.xml
-          
           echo "=== Dipendenze aggiornate ==="
-          grep -E "(netty|guava|grpc|protobuf)\.version" pom.xml || true
+          grep -E "(netty|guava)\.version" pom.xml | head -5
 
       - name: Clean all old builds
         run: find . -name target -type d -exec rm -rf {} + 2>/dev/null || true
@@ -85,10 +78,10 @@ jobs:
           cat cp.txt | tr ':' '\n' | grep netty | head -3
           echo ""
           echo "Guava version:"
-          cat cp.txt | tr ':' '\n' | grep guava | head -3
+          cat cp.txt | tr ':' '\n' | grep guava | head -1
           echo ""
           echo "Checker-qual version:"
-          cat cp.txt | tr ':' '\n' | grep checker | head -3
+          cat cp.txt | tr ':' '\n' | grep checker | head -1
 
       - name: Run EvoSuite
         working-directory: bookkeeper-server
