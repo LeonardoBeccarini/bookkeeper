@@ -30,9 +30,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          key: ${{ runner.os }}-maven-evosuite-downgrade-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
-            ${{ runner.os }}-maven-
+            ${{ runner.os }}-maven-evosuite-
 
       - name: Download EvoSuite
         run: |
@@ -40,10 +40,35 @@ jobs:
           wget -q -O tools/evosuite/evosuite.jar \
             https://github.com/EvoSuite/evosuite/releases/download/v1.2.0/evosuite-1.2.0.jar
 
-      - name: Build entire project (install dependencies locally)
+      - name: Downgrade dependencies for EvoSuite compatibility
+        run: |
+          echo "=== Downgrading dependencies to Java 11 compatible versions ==="
+          
+          # Netty: 4.1.121.Final -> 4.1.86.Final (ultimo compilato con Java 11)
+          sed -i 's/<netty.version>4.1.121.Final<\/netty.version>/<netty.version>4.1.86.Final<\/netty.version>/g' pom.xml
+          
+          # Netty io_uring (se presente)
+          sed -i 's/<netty-iouring.version>0.0.26.Final<\/netty-iouring.version>/<netty-iouring.version>0.0.16.Final<\/netty-iouring.version>/g' pom.xml
+          
+          # Checker-qual (viene con Guava) - Guava 32 usa checker-qual 3.33 (Java 17+)
+          # Downgrade Guava: 32.0.1-jre -> 31.1-jre
+          sed -i 's/<guava.version>32.0.1-jre<\/guava.version>/<guava.version>31.1-jre<\/guava.version>/g' pom.xml
+          
+          # gRPC: versioni recenti potrebbero avere problemi
+          sed -i 's/<grpc.version>1.72.0<\/grpc.version>/<grpc.version>1.53.0<\/grpc.version>/g' pom.xml
+          
+          # Protobuf
+          sed -i 's/<protobuf.version>3.25.5<\/protobuf.version>/<protobuf.version>3.21.12<\/protobuf.version>/g' pom.xml
+          
+          echo "=== Dipendenze aggiornate ==="
+          grep -E "(netty|guava|grpc|protobuf)\.version" pom.xml || true
+
+      - name: Clean all old builds
+        run: find . -name target -type d -exec rm -rf {} + 2>/dev/null || true
+
+      - name: Build entire project with downgraded dependencies
         run: |
           mvn clean install -DskipTests -q \
-            -Dmaven.compiler.release=11 \
             -Dmaven.compiler.source=11 \
             -Dmaven.compiler.target=11
 
@@ -51,6 +76,19 @@ jobs:
         working-directory: bookkeeper-server
         run: |
           mvn dependency:build-classpath -Dmdep.outputFile=cp.txt -q
+
+      - name: Verify classpath versions
+        working-directory: bookkeeper-server
+        run: |
+          echo "=== Verifying dependency versions in classpath ==="
+          echo "Netty version:"
+          cat cp.txt | tr ':' '\n' | grep netty | head -3
+          echo ""
+          echo "Guava version:"
+          cat cp.txt | tr ':' '\n' | grep guava | head -3
+          echo ""
+          echo "Checker-qual version:"
+          cat cp.txt | tr ':' '\n' | grep checker | head -3
 
       - name: Run EvoSuite
         working-directory: bookkeeper-server
@@ -89,38 +127,19 @@ jobs:
               || echo "Warning: EvoSuite failed for $CLASS, continuing..."
           done
 
-      - name: Debug - Find generated files
+      - name: List generated tests
         working-directory: bookkeeper-server
         run: |
-          echo "=== Contents of bookkeeper-server ==="
-          ls -la
+          echo "=== Generated test files ==="
+          find evosuite-tests -name "*.java" -type f 2>/dev/null || echo "No tests generated"
           echo ""
-          echo "=== Looking for evosuite-tests ==="
-          find . -type d -name "evosuite*" 2>/dev/null || echo "No evosuite dirs found"
-          echo ""
-          echo "=== Looking for generated Java files ==="
-          find . -name "*_ESTest*.java" -type f 2>/dev/null || echo "No ESTest files found"
-          echo ""
-          echo "=== Contents of evosuite-tests (if exists) ==="
-          ls -laR evosuite-tests 2>/dev/null || echo "evosuite-tests dir not found or empty"
-
-      - name: Collect all generated tests
-        working-directory: bookkeeper-server
-        run: |
-          mkdir -p evosuite-tests-output
-          # Cerca test in tutte le possibili posizioni
-          find . -name "*_ESTest*.java" -type f -exec cp {} evosuite-tests-output/ \; 2>/dev/null || true
-          find . -path "./evosuite-tests/*" -name "*.java" -exec cp --parents {} evosuite-tests-output/ \; 2>/dev/null || true
-          echo "Files collected:"
-          ls -laR evosuite-tests-output || echo "No files collected"
+          ls -laR evosuite-tests 2>/dev/null || echo "evosuite-tests directory empty or not found"
 
       - name: Upload generated tests
         uses: actions/upload-artifact@v4
         with:
           name: evosuite-tests
-          path: |
-            bookkeeper-server/evosuite-tests/
-            bookkeeper-server/evosuite-tests-output/
+          path: bookkeeper-server/evosuite-tests/
           if-no-files-found: warn
 
       - name: Upload EvoSuite reports
