@@ -44,18 +44,16 @@ jobs:
           wget -q -O tools/randoop/randoop.jar \
             https://github.com/randoop/randoop/releases/download/v4.3.2/randoop-all-4.3.2.jar
 
-      - name: Clean old builds
-        run: find . -name target -type d -exec rm -rf {} + 2>/dev/null || true
-
-      - name: Compile bookkeeper-server
-        working-directory: bookkeeper-server
+      - name: Build entire project (install dependencies locally)
         run: |
-          mvn clean compile -pl . -am -DskipTests \
+          mvn clean install -DskipTests -q \
             -Dmaven.compiler.release=11 \
             -Dmaven.compiler.source=11 \
-            -Dmaven.compiler.target=11 \
-            -DforceJavacCompilerUse=true \
-            -q
+            -Dmaven.compiler.target=11
+
+      - name: Generate classpath for bookkeeper-server
+        working-directory: bookkeeper-server
+        run: |
           mvn dependency:build-classpath -Dmdep.outputFile=cp.txt -q
 
       - name: Run Randoop

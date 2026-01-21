@@ -35,9 +35,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-maven-
 
-      - name: Run custom tests
+      - name: Build project and run custom tests
         run: |
-          mvn clean verify -pl bookkeeper-server -am \
+          mvn clean install -DskipTests -q
+          mvn verify -pl bookkeeper-server \
             -Dtest=WriteCacheGetTest,WriteCachePutTest,CreateLedgerTest,OpenLedgerTest,DeleteLedgerTest \
             -DfailIfNoTests=false
 
