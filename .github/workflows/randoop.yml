@@ -1,0 +1,127 @@
+name: Randoop Test Generation
+
+on:
+  workflow_dispatch:
+    inputs:
+      time_limit:
+        description: 'Tempo limite per classe (secondi)'
+        required: false
+        default: '60'
+      output_limit:
+        description: 'Numero massimo di test per classe'
+        required: false
+        default: '500'
+      target_class:
+        description: 'Classe specifica da testare (vuoto = tutte)'
+        required: false
+        default: ''
+
+jobs:
+  randoop:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Download Randoop
+        run: |
+          mkdir -p tools/randoop
+          wget -q -O tools/randoop/randoop.jar \
+            https://github.com/randoop/randoop/releases/download/v4.3.2/randoop-all-4.3.2.jar
+
+      - name: Clean old builds
+        run: find . -name target -type d -exec rm -rf {} + 2>/dev/null || true
+
+      - name: Compile bookkeeper-server
+        working-directory: bookkeeper-server
+        run: |
+          mvn clean compile -pl . -am -DskipTests \
+            -Dmaven.compiler.release=11 \
+            -Dmaven.compiler.source=11 \
+            -Dmaven.compiler.target=11 \
+            -DforceJavacCompilerUse=true \
+            -q
+          mvn dependency:build-classpath -Dmdep.outputFile=cp.txt -q
+
+      - name: Run Randoop
+        working-directory: bookkeeper-server
+        run: |
+          FULL_CP="target/classes:$(cat cp.txt):../tools/randoop/randoop.jar"
+          mkdir -p randoop-tests
+          
+          # Classi testate nel report (BookKeeper e WriteCache)
+          CLASSES=(
+            "org.apache.bookkeeper.client.BookKeeper"
+            "org.apache.bookkeeper.bookie.storage.ldb.WriteCache"
+          )
+          
+          # Se specificata una classe specifica, usa solo quella
+          if [ -n "${{ github.event.inputs.target_class }}" ]; then
+            CLASSES=("${{ github.event.inputs.target_class }}")
+          fi
+          
+          TIME_LIMIT="${{ github.event.inputs.time_limit }}"
+          TIME_LIMIT="${TIME_LIMIT:-60}"
+          
+          OUTPUT_LIMIT="${{ github.event.inputs.output_limit }}"
+          OUTPUT_LIMIT="${OUTPUT_LIMIT:-500}"
+          
+          for CLASS in "${CLASSES[@]}"; do
+            echo "========================================"
+            echo "Generating tests for: $CLASS"
+            echo "========================================"
+            
+            # Estrai nome semplice della classe per il package
+            SIMPLE_NAME=$(echo "$CLASS" | rev | cut -d'.' -f1 | rev)
+            PACKAGE_NAME=$(echo "$CLASS" | rev | cut -d'.' -f2- | rev)
+            
+            mkdir -p "randoop-tests/${SIMPLE_NAME}"
+            
+            java -cp "$FULL_CP" randoop.main.Main gentests \
+              --testclass="$CLASS" \
+              --time-limit="$TIME_LIMIT" \
+              --output-limit="$OUTPUT_LIMIT" \
+              --junit-output-dir="randoop-tests/${SIMPLE_NAME}" \
+              --junit-package-name="${PACKAGE_NAME}.randoop" \
+              --regression-test-basename="${SIMPLE_NAME}RegressionTest" \
+              --error-test-basename="${SIMPLE_NAME}ErrorTest" \
+              --no-error-revealing-tests=false \
+              --flaky-test-behavior=DISCARD \
+              || echo "Warning: Randoop failed for $CLASS, continuing..."
+          done
+
+      - name: List generated tests
+        working-directory: bookkeeper-server
+        run: |
+          echo "Generated test files:"
+          find randoop-tests -name "*.java" -type f 2>/dev/null || echo "No tests generated"
+          echo ""
+          echo "Test counts per class:"
+          for dir in randoop-tests/*/; do
+            if [ -d "$dir" ]; then
+              count=$(find "$dir" -name "*.java" -type f 2>/dev/null | wc -l)
+              echo "  $(basename $dir): $count files"
+            fi
+          done
+
+      - name: Upload generated tests
+        uses: actions/upload-artifact@v4
+        with:
+          name: randoop-tests
+          path: bookkeeper-server/randoop-tests/
+          if-no-files-found: warn
