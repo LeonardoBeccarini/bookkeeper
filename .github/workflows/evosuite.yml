@@ -79,22 +79,53 @@ jobs:
             java -jar ../tools/evosuite/evosuite.jar \
               -class "$CLASS" \
               -projectCP "$FULL_CP" \
+              -Dtest_dir=evosuite-tests \
+              -Dreport_dir=evosuite-report \
               -Dsandbox=false \
               -Dsearch_budget=$BUDGET \
               -Dminimize=true \
               -Dassertion_strategy=all \
+              -Djunit_check=false \
               || echo "Warning: EvoSuite failed for $CLASS, continuing..."
           done
 
-      - name: List generated tests
+      - name: Debug - Find generated files
         working-directory: bookkeeper-server
         run: |
-          echo "Generated test files:"
-          find evosuite-tests -name "*.java" -type f 2>/dev/null || echo "No tests generated"
+          echo "=== Contents of bookkeeper-server ==="
+          ls -la
+          echo ""
+          echo "=== Looking for evosuite-tests ==="
+          find . -type d -name "evosuite*" 2>/dev/null || echo "No evosuite dirs found"
+          echo ""
+          echo "=== Looking for generated Java files ==="
+          find . -name "*_ESTest*.java" -type f 2>/dev/null || echo "No ESTest files found"
+          echo ""
+          echo "=== Contents of evosuite-tests (if exists) ==="
+          ls -laR evosuite-tests 2>/dev/null || echo "evosuite-tests dir not found or empty"
+
+      - name: Collect all generated tests
+        working-directory: bookkeeper-server
+        run: |
+          mkdir -p evosuite-tests-output
+          # Cerca test in tutte le possibili posizioni
+          find . -name "*_ESTest*.java" -type f -exec cp {} evosuite-tests-output/ \; 2>/dev/null || true
+          find . -path "./evosuite-tests/*" -name "*.java" -exec cp --parents {} evosuite-tests-output/ \; 2>/dev/null || true
+          echo "Files collected:"
+          ls -laR evosuite-tests-output || echo "No files collected"
 
       - name: Upload generated tests
         uses: actions/upload-artifact@v4
         with:
           name: evosuite-tests
-          path: bookkeeper-server/evosuite-tests/
+          path: |
+            bookkeeper-server/evosuite-tests/
+            bookkeeper-server/evosuite-tests-output/
           if-no-files-found: warn
+
+      - name: Upload EvoSuite reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: evosuite-reports
+          path: bookkeeper-server/evosuite-report/
+          if-no-files-found: ignore
