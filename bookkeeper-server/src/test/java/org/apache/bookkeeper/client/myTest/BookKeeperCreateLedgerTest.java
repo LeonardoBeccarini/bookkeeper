@@ -85,7 +85,6 @@ public class BookKeeperCreateLedgerTest extends BookKeeperClusterTestCase {
         this.aQS = aQS;
         this.digestType = digestType;
 
-        // Conversione password identica alla reference
         if (passw != null) {
             this.password = passw.getBytes();
         } else {
@@ -97,7 +96,6 @@ public class BookKeeperCreateLedgerTest extends BookKeeperClusterTestCase {
     @Before
     @Override
     public void setUp() throws Exception {
-        // Configurazione identica alla reference
         baseConf.setJournalWriteData(true);
         baseClientConf.setUseV2WireProtocol(true);
         super.setUp();
@@ -111,7 +109,6 @@ public class BookKeeperCreateLedgerTest extends BookKeeperClusterTestCase {
             try {
                 this.ledgerHandle = this.bkClient.createLedger(this.ensSize, this.wQS, this.aQS, this.digestType, this.password);
 
-                // STRATEGIA REFERENCE "ZOMBIE CHECK":
                 // Se la creazione non fallisce (cosa che non dovrebbe accadere), proviamo a scrivere.
                 // Se la scrittura funziona, il test fallisce gravemente.
                 this.ledgerHandle.addEntry("Expect an error".getBytes());
