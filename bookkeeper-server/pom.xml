@@ -414,10 +414,12 @@
                 <value>XML</value>
               </outputFormats>
               <timestampedReports>false</timestampedReports>
-              <threads>2</threads>
-              <!-- Timeout aumentati -->
-              <timeoutConstant>30000</timeoutConstant>
-              <timeoutFactor>2.0</timeoutFactor>
+              <!-- Timeout molto più alti -->
+              <threads>1</threads>
+              <timeoutConstant>60000</timeoutConstant>
+              <timeoutFactor>3.0</timeoutFactor>
+              <!-- Verbose per debug -->
+              <verbose>true</verbose>
             </configuration>
           </plugin>
         </plugins>
