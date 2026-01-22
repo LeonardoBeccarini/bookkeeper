@@ -156,6 +156,20 @@ public class WriteCachePutTest {
 
             if (expectedOutcome == Outcome.TRUE) {
                 assertTrue("Test #" + testCaseId + " fallito: atteso TRUE", result);
+
+                // Verifica che l'entry sia stata effettivamente scritta nella cache
+                if (initialState == CacheState.AVAILABLE) {
+                    assertTrue("Test #" + testCaseId + ": entry non trovata nella cache dopo put()",
+                            writeCache.hasEntry(ledgerId, entryId));
+
+                    ByteBuf retrieved = writeCache.get(ledgerId, entryId);
+                    assertNotNull("Test #" + testCaseId + ": get() ha ritornato null dopo put() riuscito",
+                            retrieved);
+                    assertEquals("Test #" + testCaseId + ": dimensione entry non corrisponde",
+                            entryBuffer.readableBytes(), retrieved.readableBytes());
+                    retrieved.release();
+                }
+
             } else if (expectedOutcome == Outcome.FALSE) {
                 assertFalse("Test #" + testCaseId + " fallito: atteso FALSE", result);
             }
@@ -174,6 +188,64 @@ public class WriteCachePutTest {
             if (expectedOutcome != Outcome.EXCEPTION) {
                 fail("Ricevuta eccezione inaspettata (" + e.getClass().getSimpleName() + ") per Test #" + testCaseId + ": " + e.getMessage());
             }
+        }
+    }
+    // =========================================================================
+// BRANCH: maxSegmentSize - localOffset < size → TRUE (continue)
+// =========================================================================
+
+    /**
+     * TC-WB-01: Entry al boundary del segmento - forza continue nel loop
+     * Branch target: maxSegmentSize - localOffset < size → TRUE
+     */
+    @Test
+    public void testBranch_SegmentBoundary_EntryCrossesSegment() {
+        int segmentSize = 256;
+        int cacheSize = segmentSize * 2;
+
+        try (WriteCache cache = new WriteCache(UnpooledByteBufAllocator.DEFAULT, cacheSize, segmentSize)) {
+            // Prima entry: 192 bytes → rimangono 64 bytes nel primo segmento
+            ByteBuf entry1 = Unpooled.buffer(192);
+            entry1.writeZero(192);
+            assertTrue(cache.put(1L, 1L, entry1));
+
+            // Seconda entry: 100 bytes → non entra nei 64 bytes rimanenti
+            // Triggera: maxSegmentSize - localOffset (64) < size (100) → TRUE
+            ByteBuf entry2 = Unpooled.buffer(100);
+            entry2.writeZero(100);
+            assertTrue(cache.put(1L, 2L, entry2));
+
+            entry1.release();
+            entry2.release();
+        }
+    }
+
+// =========================================================================
+// BRANCH: currentLastEntryId > entryId → TRUE
+// =========================================================================
+
+    /**
+     * TC-WB-02: Scrittura out-of-order - entryId più vecchio arriva dopo
+     * Branch target: currentLastEntryId > entryId → TRUE
+     */
+    @Test
+    public void testBranch_OutOfOrderWrite_OlderEntryAfterNewer() {
+        try (WriteCache cache = new WriteCache(UnpooledByteBufAllocator.DEFAULT, 1024, 1024)) {
+            long ledgerId = 1L;
+
+            // Prima inserzione: entryId = 100
+            ByteBuf entry1 = Unpooled.buffer(10);
+            entry1.writeZero(10);
+            assertTrue(cache.put(ledgerId, 100L, entry1));
+
+            // Seconda inserzione: entryId = 50 (più vecchio)
+            // Triggera: currentLastEntryId (100) > entryId (50) → TRUE
+            ByteBuf entry2 = Unpooled.buffer(10);
+            entry2.writeZero(10);
+            assertTrue(cache.put(ledgerId, 50L, entry2));
+
+            entry1.release();
+            entry2.release();
         }
     }
 
@@ -197,4 +269,6 @@ public class WriteCachePutTest {
                 break;
         }
     }
+    
+    
 }

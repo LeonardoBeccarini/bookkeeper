@@ -37,7 +37,7 @@ public class BookKeeperOpenLedgerTest extends BookKeeperClusterTestCase {
     private static final byte[] WRONG_PASSWD = "pluto".getBytes(StandardCharsets.UTF_8);
     private static final byte[] EMPTY_PASSWD = new byte[0];
     private static final DigestType rightDigestType = DigestType.CRC32;
-    private static final DigestType wrongDigestType = DigestType.MAC;
+   // private static final DigestType wrongDigestType = DigestType.MAC;
     private static final long WRONG_ID = 100L;
 
     private static final byte[] ENTRY_1 = "Test entry 1".getBytes(StandardCharsets.UTF_8);
@@ -165,6 +165,26 @@ public class BookKeeperOpenLedgerTest extends BookKeeperClusterTestCase {
                         "Era attesa un'eccezione ma openLedger è riuscito.",
                         caught);
                 break;
+        }
+    }
+
+    //AGGIUNTA test case client chiuso
+    @Test
+    public void testOpenLedgerWithClosedClient() throws Exception {
+        // Crea e chiudi il ledger normalmente
+        LedgerHandle lh = bkClient.createLedger(2, 2, 1, rightDigestType, PASSWD);
+        lh.addEntry(ENTRY_1);
+        long ledgerId = lh.getId();
+        lh.close();
+
+        // Chiudi il client PRIMA di chiamare openLedger
+        bkClient.close();
+
+        try {
+            bkClient.openLedger(ledgerId, rightDigestType, PASSWD);
+            Assert.fail("Doveva lanciare BKException.ClientClosedException");
+        } catch (BKException.BKClientClosedException e) {
+            // eccezione attesa.
         }
     }
 

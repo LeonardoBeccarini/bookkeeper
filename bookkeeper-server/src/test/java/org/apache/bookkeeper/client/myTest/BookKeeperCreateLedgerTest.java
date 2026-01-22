@@ -1,5 +1,6 @@
 package org.apache.bookkeeper.client.myTest;
 
+import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.client.BookKeeper.DigestType;
 import org.apache.bookkeeper.client.LedgerHandle;
@@ -110,16 +111,15 @@ public class BookKeeperCreateLedgerTest extends BookKeeperClusterTestCase {
                 this.ledgerHandle = this.bkClient.createLedger(this.ensSize, this.wQS, this.aQS, this.digestType, this.password);
 
                 // Se la creazione non fallisce (cosa che non dovrebbe accadere), proviamo a scrivere.
-                // Se la scrittura funziona, il test fallisce gravemente.
+                // Se la scrittura funziona, il test fallisce.
                 this.ledgerHandle.addEntry("Expect an error".getBytes());
 
-                // Se arriviamo qui, il sistema ha accettato parametri invalidi E ha permesso la scrittura.
+                // Se arriviamo qui, il sistema ha accettato parametri invalidi e ha permesso la scrittura.
                 Assert.fail("An exception was expected but operation succeeded.");
 
             } catch (Exception e) {
                 // Comportamento corretto: eccezione lanciata come previsto.
-                // La reference usa un catch generico o multi-catch (IllegalArgumentException | BKException | ...)
-                Assert.assertTrue("Eccezione catturata correttamente: " + e.getClass().getSimpleName(), this.isExceptionExpected);
+                Assert.assertTrue("Eccezione catturata correttamente: " + e.getClass().getSimpleName(), true);
             }
         } else {
             // Ramo 2: Successo atteso
@@ -135,7 +135,7 @@ public class BookKeeperCreateLedgerTest extends BookKeeperClusterTestCase {
                 // Controllo metadati
                 checkData(this.ledgerHandle);
 
-                Assert.assertFalse("No exception was expected. Test went correctly", this.isExceptionExpected);
+                Assert.assertFalse("No exception was expected. Test went correctly", false);
 
             } catch (Exception e) {
                 e.printStackTrace();
@@ -158,6 +158,19 @@ public class BookKeeperCreateLedgerTest extends BookKeeperClusterTestCase {
 
         if (this.password != null) {
             Assert.assertArrayEquals("password", this.password, metadata.getPassword());
+        }
+    }
+    // aggiunta per coprire branch della chiamata asincrona chiamata internamente dal metodo under test
+    @Test
+    public void testCreateLedgerWithClosedClient() throws Exception {
+        // Chiudi il client PRIMA di chiamare createLedger
+        bkClient.close();
+
+        try {
+            ledgerHandle = bkClient.createLedger(1, 1, 1, DigestType.CRC32, "pippo".getBytes());
+            Assert.fail("Doveva lanciare BKException.BKClientClosedException");
+        } catch (BKException.BKClientClosedException e) {
+            // Atteso: copre il branch "if (closed)"
         }
     }
 

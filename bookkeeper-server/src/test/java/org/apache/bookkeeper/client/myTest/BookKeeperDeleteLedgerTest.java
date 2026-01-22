@@ -1,5 +1,6 @@
 package org.apache.bookkeeper.client.myTest;
 
+import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.client.LedgerHandle;
 import org.apache.bookkeeper.client.BookKeeper.DigestType;
@@ -109,6 +110,25 @@ public class BookKeeperDeleteLedgerTest extends BookKeeperClusterTestCase {
                     "Il ledger originale doveva essere eliminato dopo deleteLedger(" + idToDelete + ")",
                     ledgerExists
             );
+        }
+    }
+
+    @Test
+    public void testDeleteLedgerWithClosedClient() throws Exception {
+        // Chiudi il ledgerHandle prima
+        ledgerHandle.close();
+
+        long ledgerId = ledgerHandle.getId();
+
+        // Chiudo il client prima di chiamare deleteLedger
+        bkClient.close();
+
+        try {
+            bkClient.deleteLedger(ledgerId);
+            Assert.fail("Doveva lanciare BKException.BKClientClosedException");
+        } catch (BKException.BKClientClosedException e) {
+            // eccezione attesa
+            ledgerDeleted = false; // Il ledger NON è stato effettivamente eliminato
         }
     }
 }
