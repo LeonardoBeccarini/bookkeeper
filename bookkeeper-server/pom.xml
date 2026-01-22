@@ -414,7 +414,10 @@
                 <value>XML</value>
               </outputFormats>
               <timestampedReports>false</timestampedReports>
-              <threads>4</threads>
+              <threads>2</threads>
+              <!-- Timeout aumentati -->
+              <timeoutConstant>30000</timeoutConstant>
+              <timeoutFactor>2.0</timeoutFactor>
             </configuration>
           </plugin>
         </plugins>
