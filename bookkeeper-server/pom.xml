@@ -393,10 +393,16 @@
               </targetClasses>
               <!-- Classi di test da eseguire -->
               <targetTests>
-                <value>org.apache.bookkeeper.client.BookKeeper*Test*</value>
-                <value>org.apache.bookkeeper.bookie.storage.ldb.WriteCache*Test*</value>
+                <!-- WriteCache tests -->
+                <value>org.apache.bookkeeper.bookie.storage.randoop.WriteCache*</value>
+                <value>org.apache.bookkeeper.bookie.storage.myTests.WriteCache*</value>
+                <value>org.apache.bookkeeper.bookie.storage.claude.WriteCache*</value>
+                <!-- BookKeeper tests -->
+                <value>org.apache.bookkeeper.client.randoop.BookKeeper*</value>
+                <value>org.apache.bookkeeper.client.myTests.BookKeeper*</value>
+                <value>org.apache.bookkeeper.client.claude.BookKeeper*</value>
               </targetTests>
-              <!-- Metodi da escludere (tutti tranne quelli che ci interessano) -->
+              <!-- Metodi da mutare -->
               <excludedMethods>
                 <value>^(?!createLedger|openLedger|deleteLedger|put|get).*$</value>
               </excludedMethods>
