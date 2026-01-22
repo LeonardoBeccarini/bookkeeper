@@ -70,7 +70,7 @@ public class BookKeeperCreateLedgerTest extends BookKeeperClusterTestCase {
                 /* 31 */ {  1,  1,  1, null,              "pippo", true },
 
                 // --- Test Unidimensionali per passwd ---
-                /* 32 */ {  1,  1,  1, DigestType.CRC32,  " ",     false }, // Successo
+                /* 32 */ {  1,  1,  1, DigestType.CRC32,  "",     false }, // Successo
                 /* 33 */ {  1,  1,  1, DigestType.CRC32,  null,    true }
         });
     }
