@@ -144,7 +144,6 @@ public class BookKeeperCreateLedgerTest extends BookKeeperClusterTestCase {
         }
     }
 
-    // Helper method copiato 1:1 dalla reference
     private void checkData(LedgerHandle lh) {
         LedgerMetadata metadata = lh.getLedgerMetadata();
 
