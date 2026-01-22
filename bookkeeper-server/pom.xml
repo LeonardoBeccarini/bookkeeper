@@ -376,5 +376,43 @@
         </plugins>
       </build>
     </profile>
+    <!-- pit profile -->
+    <profile>
+      <id>mutation-testing</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.pitest</groupId>
+            <artifactId>pitest-maven</artifactId>
+            <version>1.17.0</version>
+            <configuration>
+              <!-- Classi sorgente da mutare -->
+              <targetClasses>
+                <value>org.apache.bookkeeper.client.BookKeeper</value>
+                <value>org.apache.bookkeeper.bookie.storage.ldb.WriteCache</value>
+              </targetClasses>
+              <!-- Classi di test da eseguire -->
+              <targetTests>
+                <value>org.apache.bookkeeper.client.BookKeeper*Test*</value>
+                <value>org.apache.bookkeeper.bookie.storage.ldb.WriteCache*Test*</value>
+              </targetTests>
+              <!-- Metodi da escludere (tutti tranne quelli che ci interessano) -->
+              <excludedMethods>
+                <value>^(?!createLedger|openLedger|deleteLedger|put|get).*$</value>
+              </excludedMethods>
+              <mutators>
+                <mutator>DEFAULTS</mutator>
+              </mutators>
+              <outputFormats>
+                <value>HTML</value>
+                <value>XML</value>
+              </outputFormats>
+              <timestampedReports>false</timestampedReports>
+              <threads>4</threads>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
   </profiles>
 </project>
