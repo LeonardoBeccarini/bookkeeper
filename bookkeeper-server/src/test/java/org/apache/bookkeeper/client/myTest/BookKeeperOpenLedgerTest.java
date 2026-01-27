@@ -29,7 +29,6 @@ public class BookKeeperOpenLedgerTest extends BookKeeperClusterTestCase {
 
     public enum Outcome {
         SUCCESS,
-        FAIL,
         EXCEPTION
     }
 
@@ -59,12 +58,12 @@ public class BookKeeperOpenLedgerTest extends BookKeeperClusterTestCase {
     public static Collection<Object[]> getParameters() {
         return Arrays.asList(new Object[][]{
                 /* 1 */ {-1L, rightDigestType, PASSWD, LedgerState.CLOSED, Outcome.EXCEPTION},
-                /* 2 */ {WRONG_ID, rightDigestType, PASSWD, LedgerState.CLOSED, Outcome.FAIL},
+                /* 2 */ {WRONG_ID, rightDigestType, PASSWD, LedgerState.CLOSED, Outcome.EXCEPTION},
           //      /* 3 */ {0L, wrongDigestType, PASSWD, LedgerState.CLOSED, Outcome.FAIL},
                 /* 4 */ {0L, rightDigestType, PASSWD, LedgerState.CLOSED, Outcome.SUCCESS},
-                /* 5 */ {0L, rightDigestType, null, LedgerState.CLOSED, Outcome.FAIL},
+                /* 5 */ {0L, rightDigestType, null, LedgerState.CLOSED, Outcome.EXCEPTION},
                 /* 6 */ {0L, rightDigestType, EMPTY_PASSWD, LedgerState.CLOSED, Outcome.EXCEPTION},
-                /* 7 */ {0L, rightDigestType, WRONG_PASSWD, LedgerState.CLOSED, Outcome.FAIL},
+                /* 7 */ {0L, rightDigestType, WRONG_PASSWD, LedgerState.CLOSED, Outcome.EXCEPTION},
                 /* 8 */ {0L, rightDigestType, PASSWD, LedgerState.OPEN, Outcome.SUCCESS},
                 /* 9 */ {0L, rightDigestType, PASSWD, LedgerState.IN_RECOVERY, Outcome.SUCCESS},
         });
@@ -151,14 +150,6 @@ public class BookKeeperOpenLedgerTest extends BookKeeperClusterTestCase {
                         "Non era attesa un'eccezione ma ne è stata lanciata una: "
                                 + (caught != null ? caught.getClass().getSimpleName() + ": " + caught.getMessage() : ""),
                         caught);
-                break;
-            case FAIL:
-                Assert.assertNotNull(
-                        "Era atteso un fallimento (BKException) ma openLedger è riuscito.",
-                        caught);
-                Assert.assertTrue(
-                        "Era attesa una BKException ma è stata lanciata: " + caught.getClass().getSimpleName(),
-                        caught instanceof BKException);
                 break;
             case EXCEPTION:
                 Assert.assertNotNull(
