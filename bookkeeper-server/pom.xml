@@ -395,8 +395,7 @@
               <targetTests>
                 <!-- WriteCache tests -->
                 <value>org.apache.bookkeeper.bookie.storage.randoop.WriteCache*</value>
-                <value>org.apache.bookkeeper.bookie.storage.myTest.WriteCacheGetTest</value>
-                <value>org.apache.bookkeeper.bookie.storage.myTest.WriteCachePutTest</value>
+                <value>org.apache.bookkeeper.bookie.storage.myTest.WriteCache*</value>
                 <value>org.apache.bookkeeper.bookie.storage.claude.WriteCache*</value>
                 <!-- BookKeeper tests -->
                 <value>org.apache.bookkeeper.client.randoop.BookKeeper*</value>
