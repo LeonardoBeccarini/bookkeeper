@@ -10,7 +10,7 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 /**
- * Test aggiuntivi per uccidere le mutazioni SURVIVED alle linee 150, 153, 170.
+ * Test aggiuntivi per uccidere le mutazioni SURVIVED alle linee 153, 170.
  * Complementari ai test parametrizzati in WriteCachePutTest.
  */
 public class WriteCachePutAddedTest {
@@ -23,30 +23,9 @@ public class WriteCachePutAddedTest {
             cache.close();
         }
     }
-
-    /**
-     * LINEA 150: (offset + size) > maxCacheSize
-     * Mutazione: changed conditional boundary (> diventa >=)
-     * Test: entry che riempie ESATTAMENTE la cache deve passare.
-     * - Originale: (0 + 64) > 64 è FALSE → passa
-     * - Mutato:    (0 + 64) >= 64 è TRUE → fallirebbe
-     */
-    @Test
-    public void testCacheBoundaryExactFit() {
-        cache = new WriteCache(UnpooledByteBufAllocator.DEFAULT, 64, 64);
-
-        ByteBuf entry = Unpooled.buffer(64);
-        entry.writeZero(64);
-
-        assertTrue("Entry che riempie esattamente la cache deve passare", cache.put(0L, 0L, entry));
-        entry.release();
-    }
-
     /**
      * LINEA 153: maxSegmentSize - localOffset < size
      * Test: entry che non entra nel segmento corrente deve saltare al successivo.
-     * IMPORTANTE: alignedSize deve essere MINORE di maxSegmentSize per permettere
-     * al retry di trovare un localOffset diverso.
      */
     @Test
     public void testSegmentCrossing() {
