@@ -44,23 +44,26 @@ public class WriteCachePutAddedTest {
 
     /**
      * LINEA 153: maxSegmentSize - localOffset < size
-     * Mutazioni: removed conditional, subtraction→addition, changed boundary
      * Test: entry che non entra nel segmento corrente deve saltare al successivo.
-     * - Entry1 occupa 64 bytes nel segmento 0
-     * - Entry2 (100 bytes) non entra nello spazio rimanente (128-64=64 < 100)
-     * - Deve fare continue e andare al segmento 1
+     * IMPORTANTE: alignedSize deve essere MINORE di maxSegmentSize per permettere
+     * al retry di trovare un localOffset diverso.
      */
     @Test
     public void testSegmentCrossing() {
-        cache = new WriteCache(UnpooledByteBufAllocator.DEFAULT, 512, 128);
+        // maxSegmentSize=256, così alignedSize (192) < maxSegmentSize
+        cache = new WriteCache(UnpooledByteBufAllocator.DEFAULT, 1024, 256);
 
-        ByteBuf entry1 = Unpooled.buffer(64);
-        entry1.writeZero(64);
+        // Entry1: 100 bytes -> alignedSize=128
+        // localOffset=0, segmentIdx=0, 256-0=256 >= 100 -> entra
+        ByteBuf entry1 = Unpooled.buffer(100);
+        entry1.writeZero(100);
         assertTrue(cache.put(0L, 0L, entry1));
 
-        // 128 - 64 = 64 < 100 → deve saltare al segmento successivo
-        ByteBuf entry2 = Unpooled.buffer(100);
-        entry2.writeZero(100);
+        // Entry2: 150 bytes -> alignedSize=192 (< 256!)
+        // Iter1: offset=128, localOffset=128, 256-128=128 < 150 -> CONTINUE
+        // Iter2: offset=320, localOffset=64, 256-64=192 >= 150 -> entra
+        ByteBuf entry2 = Unpooled.buffer(150);
+        entry2.writeZero(150);
         assertTrue("Entry che causa segment crossing deve passare", cache.put(0L, 1L, entry2));
 
         assertNotNull(cache.get(0L, 0L));
@@ -69,7 +72,6 @@ public class WriteCachePutAddedTest {
         entry1.release();
         entry2.release();
     }
-
     /**
      * LINEA 170: currentLastEntryId > entryId
      * Mutazione: removed conditional (sostituito con false)
