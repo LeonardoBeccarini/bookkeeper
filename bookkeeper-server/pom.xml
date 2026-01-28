@@ -395,11 +395,11 @@
               <targetTests>
                 <!-- WriteCache tests -->
                 <value>org.apache.bookkeeper.bookie.storage.randoop.WriteCache*</value>
-                <value>org.apache.bookkeeper.bookie.storage.myTests.WriteCache*</value>
+                <value>org.apache.bookkeeper.bookie.storage.myTest.WriteCache*</value>
                 <value>org.apache.bookkeeper.bookie.storage.claude.WriteCache*</value>
                 <!-- BookKeeper tests -->
                 <value>org.apache.bookkeeper.client.randoop.BookKeeper*</value>
-                <value>org.apache.bookkeeper.client.myTests.BookKeeper*</value>
+                <value>org.apache.bookkeeper.client.myTest.BookKeeper*</value>
                 <value>org.apache.bookkeeper.client.claude.BookKeeper*</value>
               </targetTests>
               <!-- Metodi da mutare -->
