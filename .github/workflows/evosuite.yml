@@ -34,15 +34,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-maven-evosuite-
 
-      - name: Download EvoSuite
+      - name: Download EvoSuite 1.1.0
         run: |
           mkdir -p tools/evosuite
+          # EvoSuite 1.1.0 - versione più stabile con classloader meno aggressivo
           wget -q -O tools/evosuite/evosuite.jar \
-            https://github.com/EvoSuite/evosuite/releases/download/v1.2.0/evosuite-1.2.0.jar
+            https://github.com/EvoSuite/evosuite/releases/download/v1.1.0/evosuite-1.1.0.jar
+          
+          echo "EvoSuite JAR downloaded:"
+          ls -la tools/evosuite/
 
       - name: Build bookkeeper-server with EvoSuite profile
         run: |
-          # Compila solo bookkeeper-server e le sue dipendenze interne (-am)
           mvn clean install -DskipTests -Pevosuite -q \
             -Dmaven.javadoc.skip=true \
             -pl bookkeeper-server -am
@@ -62,33 +65,11 @@ jobs:
         run: |
           mvn dependency:build-classpath -Dmdep.outputFile=cp_raw.txt -Pevosuite -q
           
-          echo "=== Filtering problematic JARs from classpath ==="
+          echo "=== Classpath completo ==="
+          echo "Entries: $(cat cp_raw.txt | tr ':' '\n' | wc -l)"
           
-          # Filtra i JAR che causano problemi con EvoSuite
-          # - netty io_uring (native library loading issues)
-          # - netty tcnative (native library loading issues)
-          # - netty epoll native (native library loading issues) 
-          # - native-io (native library loading issues)
-          # - circe-checksum (native library)
-          cat cp_raw.txt | tr ':' '\n' | \
-            grep -v "io_uring" | \
-            grep -v "tcnative" | \
-            grep -v "native-io" | \
-            grep -v "transport-native-epoll" | \
-            grep -v "circe-checksum" | \
-            tr '\n' ':' | sed 's/:$//' > cp.txt
-          
-          echo "Removed JARs:"
-          cat cp_raw.txt | tr ':' '\n' | grep -E "(io_uring|tcnative|native-io|transport-native-epoll|circe-checksum)" || echo "  (none)"
-          
-          echo ""
-          echo "=== Verifica versioni dipendenze chiave ==="
-          echo "Netty:"
-          cat cp.txt | tr ':' '\n' | grep -E "netty-common-[0-9]" | head -1
-          echo "Jackson:"
-          cat cp.txt | tr ':' '\n' | grep -E "jackson-core-[0-9]" | head -1
-          echo "Guava:"
-          cat cp.txt | tr ':' '\n' | grep -E "guava-[0-9]" | head -1
+          # Usa classpath completo per EvoSuite 1.1.0
+          cp cp_raw.txt cp.txt
 
       - name: Run EvoSuite
         working-directory: bookkeeper-server
@@ -109,12 +90,15 @@ jobs:
           BUDGET="${BUDGET:-60}"
           
           for CLASS in "${CLASSES[@]}"; do
+            echo ""
             echo "========================================"
             echo "Generating tests for: $CLASS"
             echo "Search budget: ${BUDGET}s"
             echo "========================================"
           
-            java -Xmx4g -jar ../tools/evosuite/evosuite.jar \
+            # EvoSuite 1.1.0 con configurazione per classi complesse
+            timeout 600 java -Xmx4g \
+              -jar ../tools/evosuite/evosuite.jar \
               -class "$CLASS" \
               -projectCP "$FULL_CP" \
               -Dtest_dir=evosuite-tests \
@@ -127,7 +111,11 @@ jobs:
               -Dclient_on_thread=true \
               -Dno_runtime_dependency=true \
               2>&1 | tee "evosuite_${CLASS##*.}.log" \
-              || echo "Warning: EvoSuite completed with issues for $CLASS"
+              || echo "⚠ EvoSuite terminato con warning per $CLASS"
+          
+            echo ""
+            echo "=== Verifica test generati per $CLASS ==="
+            find evosuite-tests -name "*.java" -type f 2>/dev/null || echo "Nessun file trovato"
           done
 
       - name: List generated tests
@@ -140,6 +128,7 @@ jobs:
           ls -laR evosuite-tests 2>/dev/null || true
 
       - name: Upload generated tests
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: evosuite-tests
@@ -147,6 +136,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Upload EvoSuite reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: evosuite-reports
