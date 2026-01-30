@@ -34,18 +34,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-maven-evosuite-
 
-      - name: Download EvoSuite 1.0.6
+      - name: Download EvoSuite 1.1.0
         run: |
           mkdir -p tools/evosuite
-          # EvoSuite 1.0.6 - versione più stabile, senza bug MOSA/LineCoverage di 1.1.0
+          # EvoSuite 1.1.0 - compatibile con Java 11 (non richiede tools.jar)
           wget -q -O tools/evosuite/evosuite.jar \
-            https://github.com/EvoSuite/evosuite/releases/download/v1.0.6/evosuite-1.0.6.jar
+            https://github.com/EvoSuite/evosuite/releases/download/v1.1.0/evosuite-1.1.0.jar
           
           echo "EvoSuite JAR downloaded:"
           ls -la tools/evosuite/
-          
-          # Verifica che il JAR sia valido
-          java -jar tools/evosuite/evosuite.jar -version || echo "Version check completed"
 
       - name: Build bookkeeper-server with EvoSuite profile
         run: |
@@ -70,13 +67,13 @@ jobs:
       - name: Generate classpath with all dependencies
         working-directory: bookkeeper-server
         run: |
-          # Genera classpath runtime (non test scope)
+          # Genera classpath runtime
           mvn dependency:build-classpath \
             -Dmdep.outputFile=cp_runtime.txt \
             -DincludeScope=runtime \
             -Pevosuite -q
           
-          # Genera classpath completo includendo compile scope
+          # Genera classpath compile
           mvn dependency:build-classpath \
             -Dmdep.outputFile=cp_compile.txt \
             -DincludeScope=compile \
@@ -88,7 +85,6 @@ jobs:
           echo "=== Classpath entries ==="
           echo "Total entries: $(cat cp.txt | tr ':' '\n' | wc -l)"
           
-          # Verifica che le dipendenze critiche siano presenti
           echo ""
           echo "=== Verifica dipendenze critiche ==="
           for dep in "commons-configuration2" "netty-buffer" "guava" "protobuf-java" "zookeeper"; do
@@ -124,15 +120,18 @@ jobs:
             echo "Search budget: ${BUDGET}s"
             echo "════════════════════════════════════════════════════════════════"
           
-            # EvoSuite 1.0.6 con configurazione ottimizzata per BookKeeper
-            # 
-            # Fix applicati:
-            # 1. -Duse_separate_classloader=false → evita ClassNotFoundException su dipendenze
-            # 2. -criterion BRANCH → evita bug LineCoverageSuiteFitness di EvoSuite 1.1.0
-            # 3. -Dalgorithm=MONOTONIC_GA → algoritmo più stabile di MOSA
-            # 4. -Dvirtual_fs=false -Dvirtual_net=false → evita mock problematici
-            # 5. -Dp_functional_mocking=0 -Dp_reflection_on_private=0 → evita reflection issues
-            # 6. -Dmax_recursion=3 → limita ricorsione per classi complesse
+            # EvoSuite 1.1.0 con configurazione che evita il bug MOSA/LineCoverage
+            #
+            # PROBLEMA: EvoSuite 1.1.0 ha un bug con MOSA + LineCoverageSuiteFitness
+            # che causa "Unsupported type of fitness function"
+            #
+            # SOLUZIONE:
+            # 1. -Dalgorithm=STEADY_STATE_GA → evita MOSA completamente
+            # 2. -criterion BRANCH → usa solo Branch coverage (no LINE che causa il bug)
+            # 3. -Duse_separate_classloader=false → fix ClassNotFoundException
+            # 4. -Dinstrument_parent=false → evita instrumentazione classi parent problematiche
+            # 5. -Dinstrument_context=false → evita instrumentazione contesto
+            # 6. -Dinstrument_method_calls=false → riduce instrumentazione
           
             timeout 900 java -Xmx4g \
               -jar ../tools/evosuite/evosuite.jar \
@@ -141,9 +140,12 @@ jobs:
               -Dtest_dir=evosuite-tests \
               -Dreport_dir=evosuite-report \
               -Dsearch_budget=$BUDGET \
-              -Dalgorithm=MONOTONIC_GA \
-              -criterion BRANCH:EXCEPTION:METHOD \
+              -Dalgorithm=STEADY_STATE_GA \
+              -criterion BRANCH \
               -Duse_separate_classloader=false \
+              -Dinstrument_parent=false \
+              -Dinstrument_context=false \
+              -Dinstrument_method_calls=false \
               -Djunit_check=false \
               -Dsandbox=false \
               -Dminimize=true \
@@ -155,10 +157,8 @@ jobs:
               -Dp_functional_mocking=0.0 \
               -Dp_reflection_on_private=0.0 \
               -Dmax_recursion=3 \
-              -Dmax_attempts=3 \
               -Dnum_parallel_clients=1 \
               -Dno_runtime_dependency=true \
-              -Dlog_level=WARN \
               2>&1 | tee "evosuite_${CLASS##*.}.log" \
               || echo "⚠ EvoSuite terminato per $CLASS (exit code: $?)"
           
@@ -170,32 +170,10 @@ jobs:
               find evosuite-tests -name "*${CLASS##*.}*Test*.java" -type f
             else
               echo "✗ Nessun test generato"
-              echo "=== Ultimi 50 righe del log ==="
-              tail -50 "evosuite_${CLASS##*.}.log"
+              echo "=== Ultimi 80 righe del log ==="
+              tail -80 "evosuite_${CLASS##*.}.log"
             fi
           done
-
-      - name: Compile generated tests (validation)
-        if: always()
-        working-directory: bookkeeper-server
-        run: |
-          echo "=== Tentativo compilazione test generati ==="
-          
-          if [ -d "evosuite-tests" ] && [ "$(find evosuite-tests -name '*.java' | wc -l)" -gt 0 ]; then
-            # Scarica EvoSuite runtime standalone
-            wget -q -O evosuite-tests/evosuite-standalone-runtime-1.0.6.jar \
-              https://github.com/EvoSuite/evosuite/releases/download/v1.0.6/evosuite-standalone-runtime-1.0.6.jar
-          
-            # Prova a compilare i test
-            COMPILE_CP="target/classes:$(cat cp.txt):evosuite-tests/evosuite-standalone-runtime-1.0.6.jar"
-          
-            find evosuite-tests -name "*.java" | head -5 | while read testfile; do
-              echo "Compiling: $testfile"
-              javac -cp "$COMPILE_CP" "$testfile" 2>&1 | head -20 || true
-            done
-          else
-            echo "Nessun test da compilare"
-          fi
 
       - name: List generated tests
         if: always()
@@ -210,21 +188,6 @@ jobs:
           echo "=== Reports ==="
           ls -la evosuite-report 2>/dev/null || echo "evosuite-report directory empty"
 
-      - name: Show logs summary
-        if: always()
-        working-directory: bookkeeper-server
-        run: |
-          echo "=== Log summary ==="
-          for log in evosuite_*.log; do
-            if [ -f "$log" ]; then
-              echo ""
-              echo "--- $log ---"
-              echo "Errors:"
-              grep -i "error\|exception\|failed" "$log" | head -10 || echo "  (none)"
-              echo "Coverage:"
-              grep -i "coverage\|fitness" "$log" | tail -5 || echo "  (not found)"
-            fi
-          done
 
       - name: Upload generated tests
         if: always()
