@@ -51,63 +51,52 @@ jobs:
           
           echo "=== Verifica classi compilate ==="
           for class in bookkeeper-server/target/classes/org/apache/bookkeeper/client/BookKeeper.class \
-                       bookkeeper-server/target/classes/org/apache/bookkeeper/bookie/storage/ldb/WriteCache.class \
-                       bookkeeper-server/target/classes/org/apache/bookkeeper/client/DefaultBookieAddressResolver.class; do
+                       bookkeeper-server/target/classes/org/apache/bookkeeper/bookie/storage/ldb/WriteCache.class; do
             if [ -f "$class" ]; then
-              VERSION=$(od -An -tx1 -j7 -N1 "$class" | tr -d ' ')
-              VERSION_DEC=$((16#$VERSION))
-              echo "✓ $class: Java $((VERSION_DEC - 44)) (major version $VERSION_DEC)"
+              echo "✓ $(basename $class) presente"
             else
               echo "✗ MISSING: $class"
             fi
           done
 
+      - name: Download optional dependencies for commons-configuration2
+        run: |
+          # Scarica dipendenze opzionali che commons-configuration2 referenzia
+          # ma che non sono incluse transitivamente
+          mvn dependency:get -Dartifact=org.apache.commons:commons-vfs2:2.9.0 -q || true
+          mvn dependency:get -Dartifact=org.apache.commons:commons-jexl:2.1.1 -q || true
+          
+          echo "Optional dependencies downloaded"
+
       - name: Generate classpath
         working-directory: bookkeeper-server
         run: |
-          # Genera un singolo classpath (evita problemi di merge)
+          # Genera classpath base
           mvn dependency:build-classpath \
-            -Dmdep.outputFile=cp.txt \
+            -Dmdep.outputFile=cp_base.txt \
             -Pevosuite -q
           
+          # Aggiungi dipendenze opzionali al classpath
+          OPTIONAL_DEPS=""
+          for jar in ~/.m2/repository/org/apache/commons/commons-vfs2/2.9.0/commons-vfs2-2.9.0.jar \
+                     ~/.m2/repository/org/apache/commons/commons-jexl/2.1.1/commons-jexl-2.1.1.jar; do
+            if [ -f "$jar" ]; then
+              OPTIONAL_DEPS="${OPTIONAL_DEPS}:${jar}"
+              echo "✓ Added optional: $(basename $jar)"
+            fi
+          done
+          
+          # Costruisci classpath finale
+          echo "$(cat cp_base.txt)${OPTIONAL_DEPS}" > cp.txt
+          
+          echo ""
           echo "=== Classpath info ==="
           echo "Total entries: $(cat cp.txt | tr ':' '\n' | wc -l)"
-          
-          # Verifica che il classpath sia valido (ogni entry esiste)
-          echo ""
-          echo "=== Verifica validità classpath ==="
-          INVALID=0
-          for entry in $(cat cp.txt | tr ':' '\n' | head -20); do
-            if [ ! -f "$entry" ]; then
-              echo "✗ MISSING: $entry"
-              INVALID=$((INVALID + 1))
-            fi
-          done
-          if [ "$INVALID" -eq 0 ]; then
-            echo "✓ Prime 20 entries verificate OK"
-          fi
-          
-          echo ""
-          echo "=== Verifica dipendenze critiche ==="
-          for dep in "commons-configuration2" "netty-buffer" "guava" "protobuf-java" "zookeeper"; do
-            if grep -q "$dep" cp.txt; then
-              echo "✓ $dep found"
-            else
-              echo "✗ $dep MISSING"
-            fi
-          done
 
       - name: Run EvoSuite
         working-directory: bookkeeper-server
         run: |
-          # Costruisci classpath con separatore corretto
           FULL_CP="target/classes:$(cat cp.txt)"
-          
-          # Debug: verifica che non ci siano path concatenati
-          echo "=== Verifica classpath format ==="
-          echo "$FULL_CP" | tr ':' '\n' | head -5
-          echo "..."
-          
           mkdir -p evosuite-tests evosuite-report
           
           CLASSES=(
@@ -129,20 +118,27 @@ jobs:
             echo "Search budget: ${BUDGET}s"
             echo "════════════════════════════════════════════════════════════════"
           
-            # EvoSuite 1.1.0 con configurazione che evita il bug MOSA/LineCoverage
+            # EvoSuite 1.1.0 - FIX per bug MOSuiteStrategy:
+            # 
+            # PROBLEMA: -Dalgorithm=STEADY_STATE_GA non impedisce l'uso di MOSuiteStrategy
+            # che ha il bug "isMaximizationFunction() called on mock"
+            #
+            # SOLUZIONE: Usare -generateSuite per forzare WholeTestSuiteStrategy
+            # invece di MOSuiteStrategy che viene usata con solo -class
+          
             timeout 900 java -Xmx4g \
               -jar ../tools/evosuite/evosuite.jar \
-              -class "$CLASS" \
-              -projectCP "$FULL_CP" \
+              -generateSuite \
               -Dtest_dir=evosuite-tests \
               -Dreport_dir=evosuite-report \
+              -Dtarget_class="$CLASS" \
+              -projectCP "$FULL_CP" \
               -Dsearch_budget=$BUDGET \
               -Dalgorithm=STEADY_STATE_GA \
               -criterion BRANCH \
               -Duse_separate_classloader=false \
               -Dinstrument_parent=false \
               -Dinstrument_context=false \
-              -Dinstrument_method_calls=false \
               -Djunit_check=false \
               -Dsandbox=false \
               -Dminimize=true \
@@ -150,14 +146,11 @@ jobs:
               -Dvirtual_fs=false \
               -Dvirtual_net=false \
               -Dmock_if_no_generator=false \
-              -Dfunctional_mocking_percent=0 \
               -Dp_functional_mocking=0.0 \
               -Dp_reflection_on_private=0.0 \
-              -Dmax_recursion=3 \
-              -Dnum_parallel_clients=1 \
               -Dno_runtime_dependency=true \
               2>&1 | tee "evosuite_${CLASS##*.}.log" \
-              || echo "⚠ EvoSuite terminato per $CLASS (exit code: $?)"
+              || echo "EvoSuite terminato per $CLASS (exit code: $?)"
           
             echo ""
             echo "=== Risultato per $CLASS ==="
@@ -167,8 +160,8 @@ jobs:
               find evosuite-tests -name "*${CLASS##*.}*Test*.java" -type f
             else
               echo "✗ Nessun test generato"
-              echo "=== Ultimi 80 righe del log ==="
-              tail -80 "evosuite_${CLASS##*.}.log"
+              echo "=== Ultimi 100 righe del log ==="
+              tail -100 "evosuite_${CLASS##*.}.log"
             fi
           done
 
@@ -180,7 +173,7 @@ jobs:
           find evosuite-tests -name "*.java" -type f 2>/dev/null || echo "No tests generated"
           echo ""
           echo "=== Directory structure ==="
-          ls -laR evosuite-tests 2>/dev/null || echo "evosuite-tests directory empty or not found"
+          ls -laR evosuite-tests 2>/dev/null || echo "evosuite-tests directory empty"
 
       - name: Upload generated tests
         if: always()
