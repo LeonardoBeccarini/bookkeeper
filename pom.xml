@@ -1573,7 +1573,7 @@
         <!-- Log4j: 2.23.1 -> 2.19.0 (Java 8) -->
         <log4j.version>2.19.0</log4j.version>
 
-        <!-- SLF4J: 2.0.12 -> 2.0.9 (Java 8) -->
+        <!-- SLF4J: 2.0.12 -> 2.0.9 (Java 8, ha slf4j-bom) -->
         <slf4j.version>2.0.9</slf4j.version>
 
         <!-- ZooKeeper: 3.9.3 -> 3.7.2 (Java 8/11) -->
@@ -1582,11 +1582,11 @@
         <!-- Curator: 5.7.1 -> 5.4.0 (compatibile con ZK 3.7.x) -->
         <curator.version>5.4.0</curator.version>
 
-        <!-- gRPC: 1.72.0 -> 1.53.0 (Java 8) -->
-        <grpc.version>1.53.0</grpc.version>
+        <!-- gRPC: 1.72.0 -> 1.58.0 (Java 11, include grpc-util nel BOM) -->
+        <grpc.version>1.58.0</grpc.version>
 
-        <!-- Protobuf: 3.25.5 -> 3.21.12 (Java 8) -->
-        <protobuf.version>3.21.12</protobuf.version>
+        <!-- Protobuf: 3.25.5 -> 3.24.0 (Java 8, compatibile con gRPC 1.58.0) -->
+        <protobuf.version>3.24.0</protobuf.version>
         <protoc3.version>${protobuf.version}</protoc3.version>
 
         <!-- RocksDB: 9.9.3 -> 7.7.3 (Java 8) -->
@@ -1619,8 +1619,8 @@
         <!-- Snake YAML: 2.0 -> 1.33 (Java 8) -->
         <snakeyaml.version>1.33</snakeyaml.version>
 
-        <!-- JetCD: 0.7.7 -> 0.7.5 (potrebbe essere Java 11) -->
-        <jetcd.version>0.7.5</jetcd.version>
+        <!-- JetCD: 0.7.7 -> 0.7.6 (compatibile con gRPC 1.58.0) -->
+        <jetcd.version>0.7.6</jetcd.version>
 
         <!-- Hadoop: 3.4.2 -> 3.3.4 (Java 8/11) -->
         <hadoop.version>3.3.4</hadoop.version>
