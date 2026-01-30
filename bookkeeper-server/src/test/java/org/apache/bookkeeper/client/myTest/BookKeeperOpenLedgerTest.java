@@ -59,7 +59,7 @@ public class BookKeeperOpenLedgerTest extends BookKeeperClusterTestCase {
         return Arrays.asList(new Object[][]{
                 /* 1 */ {-1L, rightDigestType, PASSWD, LedgerState.CLOSED, Outcome.EXCEPTION},
                 /* 2 */ {WRONG_ID, rightDigestType, PASSWD, LedgerState.CLOSED, Outcome.EXCEPTION},
-          //      /* 3 */ {0L, wrongDigestType, PASSWD, LedgerState.CLOSED, Outcome.FAIL},
+          //      /* 3 */ {0L, wrongDigestType, PASSWD, LedgerState.CLOSED, Outcome.EXCEPTION},
                 /* 4 */ {0L, rightDigestType, PASSWD, LedgerState.CLOSED, Outcome.SUCCESS},
                 /* 5 */ {0L, rightDigestType, null, LedgerState.CLOSED, Outcome.EXCEPTION},
                 /* 6 */ {0L, rightDigestType, EMPTY_PASSWD, LedgerState.CLOSED, Outcome.EXCEPTION},
