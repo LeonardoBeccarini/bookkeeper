@@ -37,7 +37,6 @@ jobs:
       - name: Download EvoSuite 1.1.0
         run: |
           mkdir -p tools/evosuite
-          # EvoSuite 1.1.0 - compatibile con Java 11 (non richiede tools.jar)
           wget -q -O tools/evosuite/evosuite.jar \
             https://github.com/EvoSuite/evosuite/releases/download/v1.1.0/evosuite-1.1.0.jar
           
@@ -46,7 +45,6 @@ jobs:
 
       - name: Build bookkeeper-server with EvoSuite profile
         run: |
-          # Build completo di tutti i moduli necessari
           mvn clean install -DskipTests -Pevosuite -q \
             -Dmaven.javadoc.skip=true \
             -pl bookkeeper-server -am
@@ -64,26 +62,30 @@ jobs:
             fi
           done
 
-      - name: Generate classpath with all dependencies
+      - name: Generate classpath
         working-directory: bookkeeper-server
         run: |
-          # Genera classpath runtime
+          # Genera un singolo classpath (evita problemi di merge)
           mvn dependency:build-classpath \
-            -Dmdep.outputFile=cp_runtime.txt \
-            -DincludeScope=runtime \
+            -Dmdep.outputFile=cp.txt \
             -Pevosuite -q
           
-          # Genera classpath compile
-          mvn dependency:build-classpath \
-            -Dmdep.outputFile=cp_compile.txt \
-            -DincludeScope=compile \
-            -Pevosuite -q
-          
-          # Unisci i classpath rimuovendo duplicati
-          cat cp_runtime.txt cp_compile.txt | tr ':' '\n' | sort -u | tr '\n' ':' | sed 's/:$//' > cp.txt
-          
-          echo "=== Classpath entries ==="
+          echo "=== Classpath info ==="
           echo "Total entries: $(cat cp.txt | tr ':' '\n' | wc -l)"
+          
+          # Verifica che il classpath sia valido (ogni entry esiste)
+          echo ""
+          echo "=== Verifica validità classpath ==="
+          INVALID=0
+          for entry in $(cat cp.txt | tr ':' '\n' | head -20); do
+            if [ ! -f "$entry" ]; then
+              echo "✗ MISSING: $entry"
+              INVALID=$((INVALID + 1))
+            fi
+          done
+          if [ "$INVALID" -eq 0 ]; then
+            echo "✓ Prime 20 entries verificate OK"
+          fi
           
           echo ""
           echo "=== Verifica dipendenze critiche ==="
@@ -98,7 +100,14 @@ jobs:
       - name: Run EvoSuite
         working-directory: bookkeeper-server
         run: |
+          # Costruisci classpath con separatore corretto
           FULL_CP="target/classes:$(cat cp.txt)"
+          
+          # Debug: verifica che non ci siano path concatenati
+          echo "=== Verifica classpath format ==="
+          echo "$FULL_CP" | tr ':' '\n' | head -5
+          echo "..."
+          
           mkdir -p evosuite-tests evosuite-report
           
           CLASSES=(
@@ -121,18 +130,6 @@ jobs:
             echo "════════════════════════════════════════════════════════════════"
           
             # EvoSuite 1.1.0 con configurazione che evita il bug MOSA/LineCoverage
-            #
-            # PROBLEMA: EvoSuite 1.1.0 ha un bug con MOSA + LineCoverageSuiteFitness
-            # che causa "Unsupported type of fitness function"
-            #
-            # SOLUZIONE:
-            # 1. -Dalgorithm=STEADY_STATE_GA → evita MOSA completamente
-            # 2. -criterion BRANCH → usa solo Branch coverage (no LINE che causa il bug)
-            # 3. -Duse_separate_classloader=false → fix ClassNotFoundException
-            # 4. -Dinstrument_parent=false → evita instrumentazione classi parent problematiche
-            # 5. -Dinstrument_context=false → evita instrumentazione contesto
-            # 6. -Dinstrument_method_calls=false → riduce instrumentazione
-          
             timeout 900 java -Xmx4g \
               -jar ../tools/evosuite/evosuite.jar \
               -class "$CLASS" \
@@ -184,10 +181,6 @@ jobs:
           echo ""
           echo "=== Directory structure ==="
           ls -laR evosuite-tests 2>/dev/null || echo "evosuite-tests directory empty or not found"
-          echo ""
-          echo "=== Reports ==="
-          ls -la evosuite-report 2>/dev/null || echo "evosuite-report directory empty"
-
 
       - name: Upload generated tests
         if: always()
