@@ -108,11 +108,16 @@ jobs:
               -Dminimize=true \
               -Dassertion_strategy=all \
               -Djunit_check=false \
+              -Dinstrument_parent=false \
+              -Dinstrument_context=false \
+              -Dinstrument_libraries=false \
+              -Dp_reflection_on_private=0.0 \
               2>&1 | tee "evosuite_${CLASS##*.}.log" \
               || echo "Warning: EvoSuite completed with issues for $CLASS"
           done
 
       - name: List generated tests
+        if: always()
         working-directory: bookkeeper-server
         run: |
           echo "=== Generated test files ==="
