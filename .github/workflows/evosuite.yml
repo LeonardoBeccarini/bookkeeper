@@ -30,7 +30,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-evosuite-downgrade-${{ hashFiles('**/pom.xml') }}
+          key: ${{ runner.os }}-maven-evosuite-profile-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             ${{ runner.os }}-maven-evosuite-
 
@@ -40,62 +40,38 @@ jobs:
           wget -q -O tools/evosuite/evosuite.jar \
             https://github.com/EvoSuite/evosuite/releases/download/v1.2.0/evosuite-1.2.0.jar
 
-      - name: Downgrade dependencies for EvoSuite compatibility
+      - name: Build with EvoSuite profile (Java 11 compatible dependencies)
         run: |
-          echo "=== Downgrading only problematic dependencies (Java 17+ compiled) ==="
+          mvn clean install -DskipTests -Pevosuite -q \
+            -Dmaven.javadoc.skip=true \
+            --fail-at-end
           
-          # Netty: 4.1.121.Final -> 4.1.86.Final (compilato con Java 11)
-          sed -i 's/<netty.version>4.1.121.Final<\/netty.version>/<netty.version>4.1.86.Final<\/netty.version>/g' pom.xml
-          
-          # Netty io_uring
-          sed -i 's/<netty-iouring.version>0.0.26.Final<\/netty-iouring.version>/<netty-iouring.version>0.0.16.Final<\/netty-iouring.version>/g' pom.xml
-          
-          # Guava: 32.0.1-jre -> 31.1-jre (usa checker-qual 3.12.0, compilato con Java 8)
-          sed -i 's/<guava.version>32.0.1-jre<\/guava.version>/<guava.version>31.1-jre<\/guava.version>/g' pom.xml
-          
-          echo "=== Dipendenze aggiornate ==="
-          grep -E "(netty|guava)\.version" pom.xml | head -5
+          echo "=== Verifica versione bytecode delle classi compilate ==="
+          for class in bookkeeper-server/target/classes/org/apache/bookkeeper/client/BookKeeper.class \
+                       bookkeeper-server/target/classes/org/apache/bookkeeper/bookie/storage/ldb/WriteCache.class; do
+            if [ -f "$class" ]; then
+              VERSION=$(od -An -tx1 -j7 -N1 "$class" | tr -d ' ')
+              VERSION_DEC=$((16#$VERSION))
+              echo "$class: Java $((VERSION_DEC - 44)) (major version $VERSION_DEC)"
+            fi
+          done
 
-      - name: Clean all old builds
-        run: find . -name target -type d -exec rm -rf {} + 2>/dev/null || true
-
-      - name: Build entire project with downgraded dependencies
-        run: |
-          mvn clean install -DskipTests -q \
-            -Dmaven.compiler.source=11 \
-            -Dmaven.compiler.target=11
-
-      - name: Generate classpath for bookkeeper-server
+      - name: Generate classpath
         working-directory: bookkeeper-server
         run: |
-          mvn dependency:build-classpath -Dmdep.outputFile=cp.txt -q
-
-      - name: Verify classpath versions
-        working-directory: bookkeeper-server
-        run: |
-          echo "=== Verifying dependency versions in classpath ==="
-          echo "Netty version:"
-          cat cp.txt | tr ':' '\n' | grep netty | head -3
-          echo ""
-          echo "Guava version:"
-          cat cp.txt | tr ':' '\n' | grep guava | head -1
-          echo ""
-          echo "Checker-qual version:"
-          cat cp.txt | tr ':' '\n' | grep checker | head -1
+          mvn dependency:build-classpath -Dmdep.outputFile=cp.txt -Pevosuite -q
 
       - name: Run EvoSuite
         working-directory: bookkeeper-server
         run: |
           FULL_CP="target/classes:$(cat cp.txt)"
-          mkdir -p evosuite-tests
+          mkdir -p evosuite-tests evosuite-report
           
-          # Classi testate nel report (BookKeeper e WriteCache)
           CLASSES=(
             "org.apache.bookkeeper.client.BookKeeper"
             "org.apache.bookkeeper.bookie.storage.ldb.WriteCache"
           )
           
-          # Se specificata una classe specifica, usa solo quella
           if [ -n "${{ github.event.inputs.target_class }}" ]; then
             CLASSES=("${{ github.event.inputs.target_class }}")
           fi
@@ -106,8 +82,10 @@ jobs:
           for CLASS in "${CLASSES[@]}"; do
             echo "========================================"
             echo "Generating tests for: $CLASS"
+            echo "Search budget: ${BUDGET}s"
             echo "========================================"
-            java -jar ../tools/evosuite/evosuite.jar \
+          
+            java -Xmx4g -jar ../tools/evosuite/evosuite.jar \
               -class "$CLASS" \
               -projectCP "$FULL_CP" \
               -Dtest_dir=evosuite-tests \
@@ -117,7 +95,8 @@ jobs:
               -Dminimize=true \
               -Dassertion_strategy=all \
               -Djunit_check=false \
-              || echo "Warning: EvoSuite failed for $CLASS, continuing..."
+              2>&1 | tee "evosuite_${CLASS##*.}.log" \
+              || echo "Warning: EvoSuite completed with issues for $CLASS"
           done
 
       - name: List generated tests
@@ -126,7 +105,7 @@ jobs:
           echo "=== Generated test files ==="
           find evosuite-tests -name "*.java" -type f 2>/dev/null || echo "No tests generated"
           echo ""
-          ls -laR evosuite-tests 2>/dev/null || echo "evosuite-tests directory empty or not found"
+          ls -laR evosuite-tests 2>/dev/null || true
 
       - name: Upload generated tests
         uses: actions/upload-artifact@v4
@@ -139,5 +118,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: evosuite-reports
-          path: bookkeeper-server/evosuite-report/
+          path: |
+            bookkeeper-server/evosuite-report/
+            bookkeeper-server/evosuite_*.log
           if-no-files-found: ignore

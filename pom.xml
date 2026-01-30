@@ -1521,5 +1521,132 @@
         <UBUNTU_SECURITY_MIRROR>${env.UBUNTU_SECURITY_MIRROR}</UBUNTU_SECURITY_MIRROR>
       </properties>
     </profile>
+
+    <!-- ============================================================== -->
+    <!-- PROFILO EVOSUITE - Downgrade dipendenze per compatibilità Java 11 -->
+    <!-- ============================================================== -->
+    <profile>
+      <id>evosuite</id>
+      <properties>
+        <!-- Forza compilazione Java 11 -->
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+        <maven.compiler.release>11</maven.compiler.release>
+
+        <!-- ========== DOWNGRADE DIPENDENZE ========== -->
+        <!-- Tutte queste versioni sono compilate con Java 8 o 11 -->
+
+        <!-- Jackson: 2.17.1 -> 2.14.3 (ultima versione Java 8) -->
+        <jackson.version>2.14.3</jackson.version>
+
+        <!-- Netty: 4.1.121 -> 4.1.86 (Java 11 compatibile) -->
+        <netty.version>4.1.86.Final</netty.version>
+        <netty-iouring.version>0.0.16.Final</netty-iouring.version>
+
+        <!-- Guava: 32.0.1 -> 31.1 (usa checker-qual 3.12.0, Java 8) -->
+        <guava.version>31.1-jre</guava.version>
+
+        <!-- Commons Configuration: 2.12.0 -> 2.8.0 (Java 8) -->
+        <commons-configuration2.version>2.8.0</commons-configuration2.version>
+
+        <!-- Commons BeanUtils: 1.11.0 -> 1.9.4 (Java 8) -->
+        <commons-beanutils.version>1.9.4</commons-beanutils.version>
+
+        <!-- Commons Lang3: 3.17.0 -> 3.12.0 (Java 8) -->
+        <commons-lang3.version>3.12.0</commons-lang3.version>
+
+        <!-- Commons IO: 2.19.0 -> 2.11.0 (Java 8) -->
+        <commons-io.version>2.11.0</commons-io.version>
+
+        <!-- Commons Codec: 1.18.0 -> 1.15 (Java 8) -->
+        <commons-codec.version>1.15</commons-codec.version>
+
+        <!-- Commons Compress: 1.27.1 -> 1.21 (Java 8) -->
+        <commons-compress.version>1.21</commons-compress.version>
+
+        <!-- Commons CLI: 1.9.0 -> 1.5.0 (Java 8) -->
+        <commons-cli.version>1.5.0</commons-cli.version>
+
+        <!-- Commons Logging: 1.3.5 -> 1.2 (Java 8) -->
+        <commons-logging.version>1.2</commons-logging.version>
+
+        <!-- Log4j: 2.23.1 -> 2.19.0 (Java 8) -->
+        <log4j.version>2.19.0</log4j.version>
+
+        <!-- SLF4J: 2.0.12 -> 1.7.36 (Java 8) -->
+        <slf4j.version>1.7.36</slf4j.version>
+
+        <!-- ZooKeeper: 3.9.3 -> 3.7.2 (Java 8/11) -->
+        <zookeeper.version>3.7.2</zookeeper.version>
+
+        <!-- Curator: 5.7.1 -> 5.4.0 (compatibile con ZK 3.7.x) -->
+        <curator.version>5.4.0</curator.version>
+
+        <!-- gRPC: 1.72.0 -> 1.53.0 (Java 8) -->
+        <grpc.version>1.53.0</grpc.version>
+
+        <!-- Protobuf: 3.25.5 -> 3.21.12 (Java 8) -->
+        <protobuf.version>3.21.12</protobuf.version>
+        <protoc3.version>${protobuf.version}</protoc3.version>
+
+        <!-- RocksDB: 9.9.3 -> 7.7.3 (Java 8) -->
+        <rocksdb.version>7.7.3</rocksdb.version>
+
+        <!-- Vertx: 4.5.11 -> 4.3.8 (Java 11) -->
+        <vertx.version>4.3.8</vertx.version>
+
+        <!-- Disruptor: 4.0.0 -> 3.4.4 (Java 8) -->
+        <disruptor.version>3.4.4</disruptor.version>
+
+        <!-- HPPC: 0.9.1 -> 0.8.2 (Java 8) -->
+        <hppc.version>0.8.2</hppc.version>
+
+        <!-- Dropwizard Metrics: 4.1.12.1 -> 4.1.31 (Java 8) -->
+        <dropwizard.version>4.1.31</dropwizard.version>
+
+        <!-- BouncyCastle FIPS: 1.0.2.5 -> 1.0.2.3 (Java 8) -->
+        <bouncycastle.version>1.0.2.3</bouncycastle.version>
+
+        <!-- Snappy: mantieni, è Java 8 -->
+        <snappy.version>1.1.10.5</snappy.version>
+
+        <!-- Lombok: 1.18.32 -> 1.18.26 (Java 11 safe) -->
+        <lombok.version>1.18.26</lombok.version>
+
+        <!-- Jetty: mantieni 9.4.x che è Java 8 -->
+        <jetty.version>9.4.51.v20230217</jetty.version>
+
+        <!-- Snake YAML: 2.0 -> 1.33 (Java 8) -->
+        <snakeyaml.version>1.33</snakeyaml.version>
+
+        <!-- JetCD: 0.7.7 -> 0.7.5 (potrebbe essere Java 11) -->
+        <jetcd.version>0.7.5</jetcd.version>
+
+        <!-- Hadoop: 3.4.2 -> 3.3.4 (Java 8/11) -->
+        <hadoop.version>3.3.4</hadoop.version>
+
+        <!-- Skip tutti i check che potrebbero fallire -->
+        <enforcer.skip>true</enforcer.skip>
+        <animal.sniffer.skip>true</animal.sniffer.skip>
+        <spotbugs.skip>true</spotbugs.skip>
+        <checkstyle.skip>true</checkstyle.skip>
+        <rat.skip>true</rat.skip>
+      </properties>
+
+      <build>
+        <plugins>
+          <!-- Forza esplicitamente Java 11 nel compiler plugin -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <configuration>
+              <source>11</source>
+              <target>11</target>
+              <release>11</release>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
   </profiles>
 </project>

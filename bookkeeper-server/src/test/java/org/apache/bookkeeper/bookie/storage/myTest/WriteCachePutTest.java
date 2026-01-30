@@ -43,8 +43,8 @@ public class WriteCachePutTest {
     }
 
     public enum Outcome {
-        TRUE,
-        FALSE,
+        SUCCESS,
+        FAIL,
         EXCEPTION,
         NPE
     }
@@ -73,8 +73,8 @@ public class WriteCachePutTest {
     public static Collection<Object[]> data() {
         return Arrays.asList(new Object[][]{
                 // Happy Path & Boundary
-                {1,  100L, 0L, BufType.VALID, CacheState.AVAILABLE, Outcome.TRUE},
-                {2,  100L, 0L, BufType.EMPTY, CacheState.AVAILABLE, Outcome.TRUE},
+                {1,  100L, 0L, BufType.VALID, CacheState.AVAILABLE, Outcome.SUCCESS},
+                {2,  100L, 0L, BufType.EMPTY, CacheState.AVAILABLE, Outcome.SUCCESS},
 
                 // Invalid Inputs
                 {3,  -1L,  0L, BufType.VALID, CacheState.AVAILABLE, Outcome.EXCEPTION},
@@ -83,13 +83,13 @@ public class WriteCachePutTest {
                 {6,  100L, 0L, BufType.INVALID, CacheState.AVAILABLE, Outcome.EXCEPTION},
 
                 // State Constraints
-                {7,  100L, 0L, BufType.VALID, CacheState.FULL,      Outcome.FALSE},
+                {7,  100L, 0L, BufType.VALID, CacheState.FULL,      Outcome.FAIL},
                 {8,  100L, 0L, BufType.VALID, CacheState.CLOSED,    Outcome.EXCEPTION},
 
                 // Interaction & Priority Checks
                 {9,  100L, 0L, BufType.NULL,    CacheState.FULL,    Outcome.NPE},
                 //Test #10 ora si aspetta FALSE (Check Full vince su Check ID)
-                {10, -1L,  0L, BufType.VALID,   CacheState.FULL,    Outcome.FALSE},
+                {10, -1L,  0L, BufType.VALID,   CacheState.FULL,    Outcome.FAIL},
                 {11, 100L, 0L, BufType.INVALID, CacheState.CLOSED,  Outcome.EXCEPTION},
                 {12, -1L, -1L, BufType.VALID,   CacheState.AVAILABLE, Outcome.EXCEPTION}
         });
@@ -154,7 +154,7 @@ public class WriteCachePutTest {
                 fail("Attesa eccezione " + expectedOutcome + " ma il metodo ha ritornato: " + result);
             }
 
-            if (expectedOutcome == Outcome.TRUE) {
+            if (expectedOutcome == Outcome.SUCCESS) {
                 assertTrue("Test #" + testCaseId + " fallito: atteso TRUE", result);
 
                 // Verifica che l'entry sia stata effettivamente scritta nella cache
@@ -170,7 +170,7 @@ public class WriteCachePutTest {
                     retrieved.release();
                 }
 
-            } else if (expectedOutcome == Outcome.FALSE) {
+            } else if (expectedOutcome == Outcome.FAIL) {
                 assertFalse("Test #" + testCaseId + " fallito: atteso FALSE", result);
             }
 

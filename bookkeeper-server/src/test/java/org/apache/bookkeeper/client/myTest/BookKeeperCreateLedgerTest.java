@@ -76,8 +76,8 @@ public class BookKeeperCreateLedgerTest extends BookKeeperClusterTestCase {
 
     public BookKeeperCreateLedgerTest(int ensSize, int wQS, int aQS, DigestType digestType, String passw, boolean isExceptionExpected) {
         //
-        // Avviamo 3 bookies. Questo è CRUCIALE per evitare timeout su quorum validi o check di consistenza.
-        // Impostiamo il timeout globale a 60 secondi come rete di sicurezza.
+        // Avvio 3 bookies.
+        // Imposto il timeout globale a 60 secondi come rete di sicurezza.
         super(3, 60);
 
         this.ensSize = ensSize;
@@ -105,15 +105,15 @@ public class BookKeeperCreateLedgerTest extends BookKeeperClusterTestCase {
     @Test
     public void testCreateLedger() {
         if (this.isExceptionExpected) {
-            // Ramo 1: Ci aspettiamo un'eccezione
+            // Ramo 1: Mi aspetto un'eccezione
             try {
                 this.ledgerHandle = this.bkClient.createLedger(this.ensSize, this.wQS, this.aQS, this.digestType, this.password);
 
-                // Se la creazione non fallisce (cosa che non dovrebbe accadere), proviamo a scrivere.
+                // Se la creazione non fallisce (cosa che non dovrebbe accadere), provo a scrivere.
                 // Se la scrittura funziona, il test fallisce.
                 this.ledgerHandle.addEntry("Expect an error".getBytes());
 
-                // Se arriviamo qui, il sistema ha accettato parametri invalidi e ha permesso la scrittura.
+                // Se arriva qui, il sistema ha accettato parametri invalidi e ha permesso la scrittura.
                 Assert.fail("An exception was expected but operation succeeded.");
 
             } catch (BKException |IllegalArgumentException | NullPointerException | InterruptedException e) {
