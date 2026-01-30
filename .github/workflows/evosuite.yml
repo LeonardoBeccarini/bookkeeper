@@ -4,17 +4,20 @@ on:
   workflow_dispatch:
     inputs:
       search_budget:
-        description: 'Tempo di ricerca per classe (secondi)'
+        description: "Tempo di ricerca per classe (secondi)"
         required: false
-        default: '60'
+        default: "60"
       target_class:
-        description: 'Classe specifica da testare (vuoto = tutte)'
+        description: "Classe specifica da testare (vuoto = tutte)"
         required: false
-        default: ''
+        default: ""
 
 jobs:
   evosuite:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout repository
@@ -23,111 +26,85 @@ jobs:
       - name: Set up Java 11
         uses: actions/setup-java@v4
         with:
-          java-version: '11'
-          distribution: 'temurin'
-
-      - name: Cache Maven packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-evosuite-profile-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-maven-evosuite-
+          java-version: "11"
+          distribution: "temurin"
+          cache: maven
 
       - name: Download EvoSuite
         run: |
+          set -euo pipefail
           mkdir -p tools/evosuite
           wget -q -O tools/evosuite/evosuite.jar \
             https://github.com/EvoSuite/evosuite/releases/download/v1.2.0/evosuite-1.2.0.jar
 
       - name: Build bookkeeper-server with EvoSuite profile
         run: |
-          # Compila solo bookkeeper-server e le sue dipendenze interne (-am)
+          set -euo pipefail
           mvn clean install -DskipTests -Pevosuite -q \
             -Dmaven.javadoc.skip=true \
             -pl bookkeeper-server -am
-          
-          echo "=== Verifica versione bytecode delle classi compilate ==="
-          for class in bookkeeper-server/target/classes/org/apache/bookkeeper/client/BookKeeper.class \
-                       bookkeeper-server/target/classes/org/apache/bookkeeper/bookie/storage/ldb/WriteCache.class; do
-            if [ -f "$class" ]; then
-              VERSION=$(od -An -tx1 -j7 -N1 "$class" | tr -d ' ')
-              VERSION_DEC=$((16#$VERSION))
-              echo "$class: Java $((VERSION_DEC - 44)) (major version $VERSION_DEC)"
-            fi
-          done
 
       - name: Generate and filter classpath
         working-directory: bookkeeper-server
         run: |
+          set -euo pipefail
           mvn dependency:build-classpath -Dmdep.outputFile=cp_raw.txt -Pevosuite -q
-          
+
           echo "=== Filtering problematic JARs from classpath ==="
-          
-          # Filtra i JAR che causano problemi con EvoSuite
-          # - netty io_uring (native library loading issues)
-          # - netty tcnative (native library loading issues)
-          # - netty epoll native (native library loading issues) 
-          # - native-io (native library loading issues)
-          # - circe-checksum (native library)
-          cat cp_raw.txt | tr ':' '\n' | \
+          tr ':' '\n' < cp_raw.txt | \
             grep -v "io_uring" | \
             grep -v "tcnative" | \
             grep -v "native-io" | \
             grep -v "transport-native-epoll" | \
             grep -v "circe-checksum" | \
-            tr '\n' ':' | sed 's/:$//' > cp.txt
-          
+            paste -sd: - > cp.txt
+
           echo "Removed JARs:"
-          cat cp_raw.txt | tr ':' '\n' | grep -E "(io_uring|tcnative|native-io|transport-native-epoll|circe-checksum)" || echo "  (none)"
-          
-          echo ""
-          echo "=== Verifica versioni dipendenze chiave ==="
-          echo "Netty:"
-          cat cp.txt | tr ':' '\n' | grep -E "netty-common-[0-9]" | head -1
-          echo "Jackson:"
-          cat cp.txt | tr ':' '\n' | grep -E "jackson-core-[0-9]" | head -1
-          echo "Guava:"
-          cat cp.txt | tr ':' '\n' | grep -E "guava-[0-9]" | head -1
+          tr ':' '\n' < cp_raw.txt | grep -E "(io_uring|tcnative|native-io|transport-native-epoll|circe-checksum)" || echo "  (none)"
 
       - name: Run EvoSuite
         working-directory: bookkeeper-server
+        env:
+          JAVA_TOOL_OPTIONS: >-
+            --add-opens=java.base/java.lang=ALL-UNNAMED
+            --add-opens=java.base/java.util=ALL-UNNAMED
+            --add-opens=java.base/java.io=ALL-UNNAMED
         run: |
+          set -euo pipefail
           FULL_CP="target/classes:$(cat cp.txt)"
           mkdir -p evosuite-tests evosuite-report
-          
+
           CLASSES=(
             "org.apache.bookkeeper.client.BookKeeper"
             "org.apache.bookkeeper.bookie.storage.ldb.WriteCache"
           )
-          
+
           if [ -n "${{ github.event.inputs.target_class }}" ]; then
             CLASSES=("${{ github.event.inputs.target_class }}")
           fi
-          
+
           BUDGET="${{ github.event.inputs.search_budget }}"
           BUDGET="${BUDGET:-60}"
-          
+
           for CLASS in "${CLASSES[@]}"; do
             echo "========================================"
             echo "Generating tests for: $CLASS"
             echo "Search budget: ${BUDGET}s"
             echo "========================================"
-          
+
             java -Xmx4g -jar ../tools/evosuite/evosuite.jar \
               -class "$CLASS" \
               -projectCP "$FULL_CP" \
               -Dtest_dir=evosuite-tests \
               -Dreport_dir=evosuite-report \
               -Dsandbox=false \
-              -Dsearch_budget=$BUDGET \
+              -Dsearch_budget="$BUDGET" \
               -Dminimize=true \
               -Dassertion_strategy=all \
               -Djunit_check=false \
               -Dinstrument_parent=false \
               -Dinstrument_context=false \
               -Dinstrument_libraries=false \
-              -Dinstrument_target_callers=false \
               -Dvirtual_fs=false \
               -Dvirtual_net=false \
               -Duse_separate_classloader=false \
@@ -146,6 +123,7 @@ jobs:
           ls -laR evosuite-tests 2>/dev/null || true
 
       - name: Upload generated tests
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: evosuite-tests
@@ -153,6 +131,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Upload EvoSuite reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: evosuite-reports
