@@ -40,11 +40,12 @@ jobs:
           wget -q -O tools/evosuite/evosuite.jar \
             https://github.com/EvoSuite/evosuite/releases/download/v1.2.0/evosuite-1.2.0.jar
 
-      - name: Build with EvoSuite profile (Java 11 compatible dependencies)
+      - name: Build bookkeeper-server with EvoSuite profile
         run: |
+          # Compila solo bookkeeper-server e le sue dipendenze interne (-am)
           mvn clean install -DskipTests -Pevosuite -q \
             -Dmaven.javadoc.skip=true \
-            --fail-at-end
+            -pl bookkeeper-server -am
           
           echo "=== Verifica versione bytecode delle classi compilate ==="
           for class in bookkeeper-server/target/classes/org/apache/bookkeeper/client/BookKeeper.class \
@@ -60,6 +61,18 @@ jobs:
         working-directory: bookkeeper-server
         run: |
           mvn dependency:build-classpath -Dmdep.outputFile=cp.txt -Pevosuite -q
+          
+          echo "=== Verifica versioni dipendenze chiave ==="
+          echo "Netty:"
+          cat cp.txt | tr ':' '\n' | grep -E "netty-common-[0-9]" | head -1
+          echo "Jackson:"
+          cat cp.txt | tr ':' '\n' | grep -E "jackson-core-[0-9]" | head -1
+          echo "Guava:"
+          cat cp.txt | tr ':' '\n' | grep -E "guava-[0-9]" | head -1
+          echo "Commons-configuration2:"
+          cat cp.txt | tr ':' '\n' | grep -E "commons-configuration2-[0-9]" | head -1
+          echo "Commons-compress:"
+          cat cp.txt | tr ':' '\n' | grep -E "commons-compress-[0-9]" | head -1
 
       - name: Run EvoSuite
         working-directory: bookkeeper-server
