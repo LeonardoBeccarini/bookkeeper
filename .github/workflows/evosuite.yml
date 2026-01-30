@@ -48,8 +48,9 @@ jobs:
         working-directory: bookkeeper-server
         run: |
           set -euo pipefail
+          
           mvn dependency:build-classpath -Dmdep.outputFile=cp_raw.txt -Pevosuite -q
-
+          
           echo "=== Filtering problematic JARs from classpath ==="
           tr ':' '\n' < cp_raw.txt | \
             grep -v "io_uring" | \
@@ -58,43 +59,59 @@ jobs:
             grep -v "transport-native-epoll" | \
             grep -v "circe-checksum" | \
             paste -sd: - > cp.txt
-
-          echo "Removed JARs:"
-          tr ':' '\n' < cp_raw.txt | grep -E "(io_uring|tcnative|native-io|transport-native-epoll|circe-checksum)" || echo "  (none)"
+          
+          # classpath finale (una sola riga) per EvoSuite
+          echo "target/classes:$(cat cp.txt)" > cp_full.txt
+          
+          echo "=== Quick check: netty jars in cp_full ==="
+          tr ':' '\n' < cp_full.txt | grep -E "netty-(buffer|common|transport)-" | head -20 || true
+          
+          # check (non-fatal) che netty-buffer contenga la classe incriminata
+          NETTY_BUF="$(tr ':' '\n' < cp_full.txt | grep -m1 'netty-buffer-.*\.jar' || true)"
+          if [ -n "$NETTY_BUF" ]; then
+            if jar tf "$NETTY_BUF" | grep -q "io/netty/buffer/UnpooledUnsafeHeapByteBuf.class"; then
+              echo "OK: UnpooledUnsafeHeapByteBuf trovata in $NETTY_BUF"
+            else
+              echo "::warning::netty-buffer trovato ma senza UnpooledUnsafeHeapByteBuf.class: $NETTY_BUF"
+            fi
+          else
+            echo "::warning::netty-buffer NON presente nel classpath: rischio ClassNotFound"
+          fi
 
       - name: Run EvoSuite
         working-directory: bookkeeper-server
         env:
+          EVOSUITE_JAR: ${{ github.workspace }}/tools/evosuite/evosuite.jar
           JAVA_TOOL_OPTIONS: >-
             --add-opens=java.base/java.lang=ALL-UNNAMED
             --add-opens=java.base/java.util=ALL-UNNAMED
             --add-opens=java.base/java.io=ALL-UNNAMED
         run: |
           set -euo pipefail
-          FULL_CP="target/classes:$(cat cp.txt)"
           mkdir -p evosuite-tests evosuite-report
-
+          
           CLASSES=(
             "org.apache.bookkeeper.client.BookKeeper"
             "org.apache.bookkeeper.bookie.storage.ldb.WriteCache"
           )
-
+          
           if [ -n "${{ github.event.inputs.target_class }}" ]; then
             CLASSES=("${{ github.event.inputs.target_class }}")
           fi
-
+          
           BUDGET="${{ github.event.inputs.search_budget }}"
           BUDGET="${BUDGET:-60}"
-
+          
           for CLASS in "${CLASSES[@]}"; do
             echo "========================================"
             echo "Generating tests for: $CLASS"
             echo "Search budget: ${BUDGET}s"
             echo "========================================"
-
-            java -Xmx4g -jar ../tools/evosuite/evosuite.jar \
+          
+            # NOTA: usiamo CP_file_path (consigliato da EvoSuite) invece di -projectCP
+            java -Xmx4g -jar "$EVOSUITE_JAR" \
               -class "$CLASS" \
-              -projectCP "$FULL_CP" \
+              -DCP_file_path="cp_full.txt" \
               -Dtest_dir=evosuite-tests \
               -Dreport_dir=evosuite-report \
               -Dsandbox=false \
@@ -102,16 +119,11 @@ jobs:
               -Dminimize=true \
               -Dassertion_strategy=all \
               -Djunit_check=false \
-              -Dinstrument_parent=false \
-              -Dinstrument_context=false \
               -Dinstrument_libraries=false \
-              -Dvirtual_fs=false \
-              -Dvirtual_net=false \
-              -Duse_separate_classloader=false \
-              -Dp_reflection_on_private=0.0 \
               2>&1 | tee "evosuite_${CLASS##*.}.log" \
               || echo "Warning: EvoSuite completed with issues for $CLASS"
           done
+      
 
       - name: List generated tests
         if: always()
