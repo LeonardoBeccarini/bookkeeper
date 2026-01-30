@@ -88,7 +88,7 @@ public class WriteCachePutTest {
 
                 // Interaction & Priority Checks
                 {9,  100L, 0L, BufType.NULL,    CacheState.FULL,    Outcome.NPE},
-                //Test #10 ora si aspetta FALSE (Check Full vince su Check ID)
+                //Test #10 ora si aspetta un fallimento (Check Full vince su Check ID)
                 {10, -1L,  0L, BufType.VALID,   CacheState.FULL,    Outcome.FAIL},
                 {11, 100L, 0L, BufType.INVALID, CacheState.CLOSED,  Outcome.EXCEPTION},
                 {12, -1L, -1L, BufType.VALID,   CacheState.AVAILABLE, Outcome.EXCEPTION}
